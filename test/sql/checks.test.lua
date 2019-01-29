@@ -33,9 +33,11 @@ box.space._ck_constraint:insert({'CK_CONSTRAINT_01', 513, false, 'X<5', 'SQL'})
 box.space._ck_constraint:count({})
 
 box.execute("INSERT INTO \"test\" VALUES(5);")
+box.space.test:insert({5})
 box.space._ck_constraint:replace({'CK_CONSTRAINT_01', 513, false, 'X<=5', 'SQL'})
 box.execute("INSERT INTO \"test\" VALUES(5);")
 box.execute("INSERT INTO \"test\" VALUES(6);")
+box.space.test:insert({6})
 -- Can't drop table with check constraints.
 box.space.test:delete({5})
 box.space.test.index.pk:drop()
@@ -47,8 +49,11 @@ box.space._space:delete({513})
 box.execute("CREATE TABLE t1(x INTEGER CONSTRAINT ONE CHECK( x<5 ), y REAL CONSTRAINT TWO CHECK( y>x ), z INTEGER PRIMARY KEY);")
 box.space._ck_constraint:count()
 box.execute("INSERT INTO t1 VALUES (7, 1, 1)")
+box.space.T1:insert({7, 1, 1})
 box.execute("INSERT INTO t1 VALUES (2, 1, 1)")
+box.space.T1:insert({2, 1, 1})
 box.execute("INSERT INTO t1 VALUES (2, 4, 1)")
+box.space.T1:update({1}, {{'+', 1, 5}})
 box.execute("DROP TABLE t1")
 
 -- Test space creation rollback on spell error in ck constraint.
@@ -94,5 +99,76 @@ box.execute("DROP TABLE w2;")
 -- gh-3653: Dissallow bindings for DDL
 --
 box.execute("CREATE TABLE t5(x INT PRIMARY KEY, y INT, CHECK( x*y < ? ));")
+
+--
+-- Test binding reset on new insertion
+--
+s = box.schema.create_space('test', {engine = engine})
+_ = s:create_index('pk')
+s:format({{name='X', type='any'}, {name='Y', type='integer'}, {name='Z', type='integer', is_nullable=true}})
+ck_not_null = box.space._ck_constraint:insert({'ZnotNULL', s.id, false, 'X = 1 AND Z IS NOT NULL', 'SQL'})
+s:insert({2, 1})
+s:insert({1, 1})
+s:insert({1, 1, box.NULL})
+s:insert({2, 1, 3})
+s:insert({1, 1})
+s:insert({1, 1, 3})
+s:drop()
+
+--
+-- Test ck constraint corner cases
+--
+s = box.schema.create_space('test', {engine = engine})
+_ = s:create_index('pk')
+s:format({{name='X', type='any'}, {name='Y', type='integer'}, {name='Z', type='integer', is_nullable=true}})
+ck_not_null = box.space._ck_constraint:insert({'ZnotNULL', s.id, false, 'Z IS NOT NULL', 'SQL'})
+s:insert({1, 2, box.NULL})
+s:insert({1, 2})
+_ = box.space._ck_constraint:delete({'ZnotNULL', s.id})
+_ = box.space._ck_constraint:insert({'XlessY', s.id, false, 'X < Y and Y < Z', 'SQL'})
+s:insert({'1', 2})
+s:insert({})
+s:insert({2, 1})
+s:insert({1, 2})
+s:insert({2, 3, 1})
+s:insert({2, 3, 4})
+s:update({2}, {{'+', 2, 3}})
+s:update({2}, {{'+', 2, 3}, {'+', 3, 3}})
+s:replace({2, 1, 3})
+box.snapshot()
+s = box.space["test"]
+s:update({2}, {{'+', 2, 3}})
+s:update({2}, {{'+', 2, 3}, {'+', 3, 3}})
+s:replace({2, 1, 3})
+s:drop()
+
+--
+-- Test complex CHECK constraints.
+--
+s = box.schema.create_space('test', {engine = engine})
+s:format({{name='X', type='integer'}, {name='Y', type='integer'}, {name='Z', type='integer'}})
+_ = s:create_index('pk', {parts = {3, 'integer'}})
+_ = s:create_index('unique', {parts = {1, 'integer'}})
+_ = box.space._ck_constraint:insert({'complex1', s.id, false, 'x+y==11 OR x*y==12 OR x/y BETWEEN 5 AND 8 OR -x == y+10', 'SQL'})
+s:insert({1, 10, 1})
+s:update({1}, {{'=', 1, 4}, {'=', 2, 3}})
+s:update({1}, {{'=', 1, 12}, {'=', 2, 2}})
+s:update({1}, {{'=', 1, 12}, {'=', 2, -22}})
+s:update({1}, {{'=', 1, 0}, {'=', 2, 1}})
+s:get({1})
+s:update({1}, {{'=', 1, 0}, {'=', 2, 2}})
+s:get({1})
+s:drop()
+
+s = box.schema.create_space('test', {engine = engine})
+s:format({{name='X', type='integer'}, {name='Z', type='any'}})
+_ = s:create_index('pk', {parts = {1, 'integer'}})
+_ = box.space._ck_constraint:insert({'complex2', s.id, false, 'typeof(coalesce(z,0))==\'integer\'', 'SQL'})
+s:insert({1, 'string'})
+s:insert({1, {map=true}})
+s:insert({1, {'a', 'r','r','a','y'}})
+s:insert({1, 3.14})
+s:insert({1, 666})
+s:drop()
 
 test_run:cmd("clear filter")
