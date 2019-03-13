@@ -750,8 +750,6 @@ alter_space_commit(struct trigger *trigger, void *event)
 		op->commit(alter, txn->signature);
 	}
 
-	trigger_run_xc(&on_alter_space, alter->new_space);
-
 	alter->new_space = NULL; /* for alter_space_delete(). */
 	/*
 	 * Delete the old version of the space, we are not
@@ -787,6 +785,8 @@ alter_space_rollback(struct trigger *trigger, void * /* event */)
 	space_swap_triggers(alter->new_space, alter->old_space);
 	space_swap_fk_constraints(alter->new_space, alter->old_space);
 	space_cache_replace(alter->new_space, alter->old_space);
+	trigger_run(&on_alter_space, alter->old_space);
+
 	alter_space_delete(alter);
 }
 
@@ -888,6 +888,7 @@ alter_space_do(struct txn *txn, struct alter_space *alter)
 	 * cache with it.
 	 */
 	space_cache_replace(alter->old_space, alter->new_space);
+	trigger_run_xc(&on_alter_space, alter->new_space);
 
 	/*
 	 * Install transaction commit/rollback triggers to either
@@ -1388,7 +1389,6 @@ on_drop_space_commit(struct trigger *trigger, void *event)
 {
 	(void) event;
 	struct space *space = (struct space *)trigger->data;
-	trigger_run_xc(&on_alter_space, space);
 	space_delete(space);
 }
 
@@ -1403,6 +1403,7 @@ on_drop_space_rollback(struct trigger *trigger, void *event)
 	(void) event;
 	struct space *space = (struct space *)trigger->data;
 	space_cache_replace(NULL, space);
+	trigger_run(&on_alter_space, space);
 }
 
 /**
@@ -1412,8 +1413,7 @@ static void
 on_create_space_commit(struct trigger *trigger, void *event)
 {
 	(void) event;
-	struct space *space = (struct space *)trigger->data;
-	trigger_run_xc(&on_alter_space, space);
+	(void) trigger;
 }
 
 /**
@@ -1429,6 +1429,7 @@ on_create_space_rollback(struct trigger *trigger, void *event)
 	(void) event;
 	struct space *space = (struct space *)trigger->data;
 	space_cache_replace(space, NULL);
+	trigger_run(&on_alter_space, space);
 	space_delete(space);
 }
 
@@ -1672,6 +1673,7 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 		 * execution on a replica.
 		 */
 		space_cache_replace(NULL, space);
+		trigger_run_xc(&on_alter_space, space);
 		/*
 		 * Do not forget to update schema_version right after
 		 * inserting the space to the space_cache, since no
@@ -1764,6 +1766,7 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 		 * execution on a replica.
 		 */
 		space_cache_replace(old_space, NULL);
+		trigger_run_xc(&on_alter_space, old_space);
 		/*
 		 * Do not forget to update schema_version right after
 		 * deleting the space from the space_cache, since no
