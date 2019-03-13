@@ -1310,13 +1310,16 @@ public:
 		: AlterSpaceOp(alter), iid(iid) {}
 	/** id of the index to truncate. */
 	uint32_t iid;
+	struct index *new_index;
 	virtual void prepare(struct alter_space *alter);
 	virtual void commit(struct alter_space *alter, int64_t signature);
+	virtual ~TruncateIndex();
 };
 
 void
 TruncateIndex::prepare(struct alter_space *alter)
 {
+	new_index = space_index(alter->new_space, iid);
 	if (iid == 0) {
 		/*
 		 * Notify the engine that the primary index
@@ -1333,7 +1336,6 @@ TruncateIndex::prepare(struct alter_space *alter)
 	 * index was recreated. For example, Vinyl uses this
 	 * callback to load indexes during local recovery.
 	 */
-	struct index *new_index = space_index(alter->new_space, iid);
 	assert(new_index != NULL);
 	space_build_index_xc(alter->new_space, new_index,
 			     alter->new_space->format);
@@ -1343,10 +1345,17 @@ void
 TruncateIndex::commit(struct alter_space *alter, int64_t signature)
 {
 	struct index *old_index = space_index(alter->old_space, iid);
-	struct index *new_index = space_index(alter->new_space, iid);
 
 	index_commit_drop(old_index, signature);
 	index_commit_create(new_index, signature);
+	new_index = NULL;
+}
+
+TruncateIndex::~TruncateIndex()
+{
+	if (new_index == NULL)
+		return;
+	index_abort_create(new_index);
 }
 
 /**
