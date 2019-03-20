@@ -571,9 +571,23 @@ applier_apply_tx(struct stailq *rows)
 		if (res != 0)
 			break;
 	}
-	if (res == 0)
+	if (res == 0) {
+		/*
+		 * We are going to commit so it's a high time to check if
+		 * the current transaction has non-local effects.
+		 */
+		if (txn_is_distributed(txn)) {
+			/*
+			 * A transaction mixes remote and local rows and
+			 * countn't be replicated back because we don't
+			 * support distributed transactions yet.
+			 */
+			diag_set(ClientError, ER_UNSUPPORTED,
+				 "Applier", "distributed transactions");
+			return -1;
+		}
 		res = txn_commit(txn);
-	else
+	} else
 		txn_rollback();
 	return res;
 }

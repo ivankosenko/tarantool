@@ -296,6 +296,15 @@ txn_commit_ro_stmt(struct txn *txn)
 	}
 }
 
+/*
+ * Check whether transaction is distributed or not.
+ * It's essential in case of replication because we couldn't
+ * replicate a transaction with both remote and local non NOP
+ * statements.
+ */
+bool
+txn_is_distributed(struct txn *txn);
+
 /**
  * End a statement. In autocommit mode, end
  * the current transaction as well.
