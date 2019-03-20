@@ -150,6 +150,11 @@ struct txn {
 	 */
 	bool is_autocommit;
 	/**
+	 * True if this transaction is allowed to have only one statement.
+	 * Used for ddl operations.
+	 */
+	bool is_single_statement;
+	/**
 	 * True if the transaction was aborted so should be
 	 * rolled back at commit.
 	 */

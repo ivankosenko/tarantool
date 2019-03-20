@@ -147,6 +147,7 @@ txn_begin(bool is_autocommit)
 	txn->n_local_rows = 0;
 	txn->n_remote_rows = 0;
 	txn->is_autocommit = is_autocommit;
+	txn->is_single_statement = false;
 	txn->has_triggers  = false;
 	txn->is_aborted = false;
 	txn->in_sub_stmt = 0;
@@ -189,6 +190,11 @@ txn_begin_stmt(struct space *space)
 			return NULL;
 	} else if (txn->in_sub_stmt > TXN_SUB_STMT_MAX) {
 		diag_set(ClientError, ER_SUB_STMT_MAX);
+		return NULL;
+	}
+	if (txn->is_single_statement && !stailq_empty(&txn->stmts)) {
+		diag_set(ClientError, ER_UNSUPPORTED,
+			 "DDL", "multi-statement transactions");
 		return NULL;
 	}
 
@@ -430,11 +436,12 @@ txn_abort(struct txn *txn)
 int
 txn_check_singlestatement(struct txn *txn, const char *where)
 {
-	if (!txn->is_autocommit || !txn_is_first_statement(txn)) {
+	if (!txn_is_first_statement(txn)) {
 		diag_set(ClientError, ER_UNSUPPORTED,
 			 where, "multi-statement transactions");
 		return -1;
 	}
+	txn->is_single_statement = true;
 	return 0;
 }
 
