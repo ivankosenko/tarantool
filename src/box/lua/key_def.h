@@ -36,6 +36,13 @@ extern "C" {
 #endif /* defined(__cplusplus) */
 
 struct lua_State;
+struct key_part;
+
+/**
+ * Push a new table representing a key_part to a Lua stack.
+ */
+void
+lbox_push_key_part(struct lua_State *L, const struct key_part *part);
 
 /**
  * Extract a key_def object from a Lua stack.

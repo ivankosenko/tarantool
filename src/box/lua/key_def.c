@@ -35,8 +35,10 @@
 #include <lauxlib.h>
 #include "fiber.h"
 #include "diag.h"
+#include "tuple.h"
 #include "box/key_def.h"
 #include "box/box.h"
+#include "box/tuple.h"
 #include "box/coll_id_cache.h"
 #include "lua/utils.h"
 #include "box/tuple_format.h" /* TUPLE_INDEX_BASE */
@@ -144,6 +146,28 @@ luaT_key_def_set_part(struct lua_State *L, struct key_part_def *parts,
 	return 0;
 }
 
+void
+lbox_push_key_part(struct lua_State *L, const struct key_part *part)
+{
+	lua_newtable(L);
+
+	lua_pushstring(L, field_type_strs[part->type]);
+	lua_setfield(L, -2, "type");
+
+	lua_pushnumber(L, part->fieldno + TUPLE_INDEX_BASE);
+	lua_setfield(L, -2, "fieldno");
+
+	lua_pushboolean(L, part->is_nullable);
+	lua_setfield(L, -2, "is_nullable");
+
+	if (part->coll_id != COLL_NONE) {
+		struct coll_id *coll_id = coll_by_id(part->coll_id);
+		assert(coll_id != NULL);
+		lua_pushstring(L, coll_id->name);
+		lua_setfield(L, -2, "collation");
+	}
+}
+
 struct key_def *
 check_key_def(struct lua_State *L, int idx)
 {
@@ -168,6 +192,102 @@ lbox_key_def_gc(struct lua_State *L)
 		return 0;
 	box_key_def_delete(key_def);
 	return 0;
+}
+
+static int
+lbox_key_def_extract_key(lua_State *L)
+{
+	struct key_def *key_def;
+	struct tuple *tuple;
+	if (lua_gettop(L) != 2 || (key_def = check_key_def(L, 1)) == NULL ||
+	   (tuple = luaT_istuple(L, 2)) == NULL)
+		return luaL_error(L, "Usage: key_def:extract_key(tuple)");
+
+	uint32_t key_size;
+	char *key = tuple_extract_key(tuple, key_def, &key_size);
+	if (key == NULL)
+		return luaT_error(L);
+
+	struct tuple *ret =
+		box_tuple_new(box_tuple_format_default(), key, key + key_size);
+	if (ret == NULL)
+		return luaT_error(L);
+	luaT_pushtuple(L, ret);
+	return 1;
+}
+
+static int
+lbox_key_def_compare(lua_State *L)
+{
+	struct key_def *key_def;
+	struct tuple *tuple_a, *tuple_b;
+	if (lua_gettop(L) != 3 || (key_def = check_key_def(L, 1)) == NULL ||
+	   (tuple_a = luaT_istuple(L, 2)) == NULL ||
+	   (tuple_b = luaT_istuple(L, 3)) == NULL)
+		return luaL_error(L, "Usage: key_def:compare(tuple_a, tuple_b)");
+
+	int rc = tuple_compare(tuple_a, tuple_b, key_def);
+	lua_pushinteger(L, rc);
+	return 1;
+}
+
+static int
+lbox_key_def_compare_with_key(lua_State *L)
+{
+	struct key_def *key_def;
+	struct tuple *tuple, *key_tuple;
+	if (lua_gettop(L) != 3 || (key_def = check_key_def(L, 1)) == NULL ||
+	   (tuple = luaT_istuple(L, 2)) == NULL)
+		goto usage_error;
+
+	lua_remove(L, 1);
+	lua_remove(L, 1);
+	if (luaT_tuple_new(L, box_tuple_format_default()) != 1 ||
+	    (key_tuple = luaT_istuple(L, -1)) == NULL)
+		goto usage_error;
+
+	const char *key = tuple_data(key_tuple);
+	assert(mp_typeof(*key) == MP_ARRAY);
+	uint32_t part_count = mp_decode_array(&key);
+
+	int rc = tuple_compare_with_key(tuple, key, part_count, key_def);
+	lua_pushinteger(L, rc);
+	return 1;
+usage_error:
+	return luaL_error(L, "Usage: key_def:compare_with_key(tuple, key)");
+}
+
+static int
+lbox_key_def_merge(lua_State *L)
+{
+	struct key_def *key_def_a, *key_def_b;
+	if (lua_gettop(L) != 2 || (key_def_a = check_key_def(L, 1)) == NULL ||
+	   (key_def_b = check_key_def(L, 2)) == NULL)
+		return luaL_error(L, "Usage: key_def:merge(second_key_def)");
+
+	struct key_def *new_key_def = key_def_merge(key_def_a, key_def_b);
+	if (new_key_def == NULL)
+		return luaT_error(L);
+
+	*(struct key_def **) luaL_pushcdata(L, key_def_type_id) = new_key_def;
+	lua_pushcfunction(L, lbox_key_def_gc);
+	luaL_setcdatagc(L, -2);
+	return 1;
+}
+
+static int
+lbox_key_def_to_table(struct lua_State *L)
+{
+	struct key_def *key_def;
+	if (lua_gettop(L) != 1 || (key_def = check_key_def(L, 1)) == NULL)
+		return luaL_error(L, "Usage: key_def:to_table()");
+
+	lua_createtable(L, key_def->part_count, 0);
+	for (uint32_t i = 0; i < key_def->part_count; ++i) {
+		lbox_push_key_part(L, &key_def->parts[i]);
+		lua_rawseti(L, -2, i + 1);
+	}
+	return 1;
 }
 
 /**
@@ -232,6 +352,19 @@ luaopen_key_def(struct lua_State *L)
 		{NULL, NULL}
 	};
 	luaL_register_module(L, "key_def", meta);
+
+	lua_newtable(L); /* key_def.internal */
+	lua_pushcfunction(L, lbox_key_def_extract_key);
+	lua_setfield(L, -2, "extract_key");
+	lua_pushcfunction(L, lbox_key_def_compare);
+	lua_setfield(L, -2, "compare");
+	lua_pushcfunction(L, lbox_key_def_compare_with_key);
+	lua_setfield(L, -2, "compare_with_key");
+	lua_pushcfunction(L, lbox_key_def_merge);
+	lua_setfield(L, -2, "merge");
+	lua_pushcfunction(L, lbox_key_def_to_table);
+	lua_setfield(L, -2, "to_table");
+	lua_setfield(L, -2, "internal");
 
 	return 1;
 }

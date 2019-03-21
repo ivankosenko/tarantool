@@ -112,7 +112,7 @@ local cases = {
 
 local test = tap.test('key_def')
 
-test:plan(#cases - 1)
+test:plan(#cases - 1 + 16)
 for _, case in ipairs(cases) do
     if type(case) == 'function' then
         case()
@@ -133,5 +133,46 @@ for _, case in ipairs(cases) do
         end
     end
 end
+
+--
+-- gh-4025: Introduce built-in function to get index key
+--          from tuple.
+-- gh-3398: Access to index compare function from lua.
+--
+tuple_a = box.tuple.new({1, 1, 22})
+tuple_b = box.tuple.new({2, 1, 11})
+tuple_c = box.tuple.new({3, 1, 22})
+pk_parts = {{type = 'unsigned', fieldno = 1}}
+sk_parts = {{type = 'number', fieldno=2}, {type='number', fieldno=3}}
+pk_def = key_def.new(pk_parts)
+test:is_deeply(pk_def:extract_key(tuple_a):totable(), {1}, "pk extract")
+sk_def = key_def.new(sk_parts)
+test:is_deeply(sk_def:extract_key(tuple_a):totable(), {1, 22}, "sk extract")
+
+test:is(pk_def:compare(tuple_b, tuple_a), 1, "pk compare 1")
+test:is(pk_def:compare(tuple_b, tuple_c), -1, "pk compare 2")
+test:is(sk_def:compare(tuple_b, tuple_a), -1, "sk compare 1")
+test:is(sk_def:compare(tuple_a, tuple_c), 0, "sk compare 1")
+
+pk_sk_def = pk_def:merge(sk_def)
+test:ok(pk_sk_def, "pksk merge")
+test:is_deeply(pk_sk_def:extract_key(tuple_a):totable(), {1, 1, 22},
+               "pksk compare 1")
+test:is(pk_sk_def:compare(tuple_a, tuple_b), -1, "pksk compare 2")
+sk_pk_def = sk_def:merge(pk_def)
+test:ok(pk_sk_def, "skpk merge")
+test:is_deeply(sk_pk_def:extract_key(tuple_a):totable(), {1, 22, 1},
+               "skpk compare 1")
+test:is(sk_pk_def:compare(tuple_a, tuple_b), 1, "skpk compare 1")
+
+key = sk_def:extract_key(tuple_a)
+test:is(sk_def:compare_with_key(tuple_a, key), 0,
+        "sk compare_with_key - extracted tuple key")
+test:is(sk_def:compare_with_key(tuple_a, {1, 22}), 0,
+        "sk compare_with_key - table key")
+test:is_deeply(sk_def:to_table(),
+               {{type='number', fieldno=2, is_nullable=false},
+                {type='number', fieldno=3, is_nullable=false}}, "sk to_table")
+test:is(tostring(sk_def) == "<struct key_def &>", true, "tostring(sk_def)")
 
 os.exit(test:check() and 0 or 1)
