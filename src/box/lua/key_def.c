@@ -33,6 +33,7 @@
 
 #include <lua.h>
 #include <lauxlib.h>
+#include "fiber.h"
 #include "diag.h"
 #include "box/key_def.h"
 #include "box/box.h"
@@ -48,8 +49,10 @@ static uint32_t key_def_type_id = 0;
  * When successful return 0, otherwise return -1 and set a diag.
  */
 static int
-luaT_key_def_set_part(struct lua_State *L, struct key_part_def *part)
+luaT_key_def_set_part(struct lua_State *L, struct key_part_def *parts,
+		      int part_idx)
 {
+	struct key_part_def *part = &parts[part_idx];
 	/* Set part->fieldno. */
 	lua_pushstring(L, "fieldno");
 	lua_gettable(L, -2);
@@ -188,23 +191,25 @@ lbox_key_def_new(struct lua_State *L)
 
 	uint32_t part_count = lua_objlen(L, 1);
 	const ssize_t parts_size = sizeof(struct key_part_def) * part_count;
-	struct key_part_def *parts = malloc(parts_size);
+	struct region *region = &fiber()->gc;
+	size_t region_svp = region_used(region);
+	struct key_part_def *parts = region_alloc(region, parts_size);
 	if (parts == NULL) {
-		diag_set(OutOfMemory, parts_size, "malloc", "parts");
+		diag_set(OutOfMemory, parts_size, "region", "parts");
 		return luaT_error(L);
 	}
 
 	for (uint32_t i = 0; i < part_count; ++i) {
 		lua_pushinteger(L, i + 1);
 		lua_gettable(L, 1);
-		if (luaT_key_def_set_part(L, &parts[i]) != 0) {
-			free(parts);
+		if (luaT_key_def_set_part(L, parts, i) != 0) {
+			region_truncate(region, region_svp);
 			return luaT_error(L);
 		}
 	}
 
 	struct key_def *key_def = key_def_new(parts, part_count);
-	free(parts);
+	region_truncate(region, region_svp);
 	if (key_def == NULL)
 		return luaT_error(L);
 
