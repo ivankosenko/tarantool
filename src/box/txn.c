@@ -76,6 +76,7 @@ txn_add_redo(struct txn_stmt *stmt, struct request *request)
 static struct txn_stmt *
 txn_stmt_new(struct txn *txn)
 {
+	assert(!txn->is_prepared);
 	struct txn_stmt *stmt;
 	stmt = region_alloc_object(&fiber()->gc, struct txn_stmt);
 	if (stmt == NULL) {
@@ -150,6 +151,7 @@ txn_begin(bool is_autocommit)
 	txn->is_single_statement = false;
 	txn->has_triggers  = false;
 	txn->is_aborted = false;
+	txn->is_prepared = false;
 	txn->in_sub_stmt = 0;
 	txn->id = ++tsn;
 	txn->signature = -1;
@@ -344,9 +346,11 @@ txn_write_to_wal(struct txn *txn)
 }
 
 int
-txn_commit(struct txn *txn)
+txn_prepare(struct txn *txn)
 {
 	assert(txn == in_txn());
+	if (txn->is_prepared)
+		return 0;
 	/*
 	 * If transaction has been started in SQL, deferred
 	 * foreign key constraints must not be violated.
@@ -356,7 +360,7 @@ txn_commit(struct txn *txn)
 		struct sql_txn *sql_txn = txn->psql_txn;
 		if (sql_txn->fk_deferred_count != 0) {
 			diag_set(ClientError, ER_FOREIGN_KEY_CONSTRAINT);
-			goto fail;
+			return -1;
 		}
 	}
 	/*
@@ -365,8 +369,17 @@ txn_commit(struct txn *txn)
 	 */
 	if (txn->engine != NULL) {
 		if (engine_prepare(txn->engine, txn) != 0)
-			goto fail;
+			return -1;;
 	}
+	txn->is_prepared = true;
+	return 0;
+}
+
+int
+txn_commit(struct txn *txn)
+{
+	if (txn_prepare(txn) != 0)
+		goto fail;
 
 	if (txn->n_local_rows + txn->n_remote_rows > 0) {
 		txn->signature = txn_write_to_wal(txn);

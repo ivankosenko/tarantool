@@ -85,6 +85,21 @@ trigger_add(struct rlist *list, struct trigger *trigger)
 }
 
 static inline void
+trigger_add_reverse(struct rlist *list, struct trigger *trigger)
+{
+	/*
+	 * New triggers are pushed to the beginning of the list.
+	 * This ensures that they are not fired right away if
+	 * pushed from within a trigger. This also ensures that
+	 * the trigger which was set first is fired last.
+	 * Alter space code depends on this order.
+	 * @todo in future, allow triggers to be pushed
+	 * to an arbitrary position on the list.
+	 */
+	rlist_add_tail_entry(list, trigger, link);
+}
+
+static inline void
 trigger_add_unique(struct rlist *list, struct trigger *trigger)
 {
 	struct trigger *trg;

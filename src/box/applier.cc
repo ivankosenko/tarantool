@@ -517,7 +517,7 @@ applier_read_tx(struct applier *applier, struct stailq *rows)
 				  "interleaving transactions");
 
 		assert(row->bodycnt <= 1);
-		if (row->bodycnt == 1 && !row->is_commit) {
+		if (row->bodycnt == 1) {
 			/* Save row body to gc region. */
 			void *new_base = region_alloc(&fiber()->gc,
 						      row->body->iov_len);
@@ -540,13 +540,10 @@ applier_read_tx(struct applier *applier, struct stailq *rows)
  * Return 0 for success or -1 in case of an error.
  */
 static int
-applier_apply_tx(struct stailq *rows)
+applier_apply_tx(struct stailq *rows, struct txn *txn)
 {
 	int res = 0;
-	struct txn *txn = txn_begin(false);
 	struct applier_tx_row *item;
-	if (txn == NULL)
-		diag_raise();
 	stailq_foreach_entry(item, rows, next) {
 		struct xrow_header *row = &item->row;
 		res = apply_row(row);
@@ -586,10 +583,450 @@ applier_apply_tx(struct stailq *rows)
 				 "Applier", "distributed transactions");
 			return -1;
 		}
-		res = txn_commit(txn);
-	} else
-		txn_rollback();
+	}
 	return res;
+}
+
+static inline void
+applier_update_state(struct applier *applier,
+		     struct vclock *vclock_at_subscribe)
+{
+	if (applier->state == APPLIER_SYNC ||
+	    applier->state == APPLIER_FOLLOW)
+		fiber_cond_signal(&applier->writer_cond);
+
+	/*
+	 * Stay 'orphan' until appliers catch up with
+	 * the remote vclock at the time of SUBSCRIBE
+	 * and the lag is less than configured.
+	 */
+	if (applier->state == APPLIER_SYNC &&
+	    applier->lag <= replication_sync_lag &&
+	    vclock_compare(vclock_at_subscribe,
+			   &replicaset.vclock) <= 0) {
+		/* Applier is synced, switch to "follow". */
+		applier_set_state(applier, APPLIER_FOLLOW);
+	}
+}
+
+/*
+ * A structure to serialize transactions from all appliers into one
+ * sequential stream and avoid races btween them.
+ */
+struct sequencer {
+	/* Count of workers. */
+	int worker_count;
+	/* Count of worker fibers in the idle state. */
+	int idle_worker_count;
+	/* Vclock of the last read transaction. */
+	struct vclock net_vclock;
+	/* Vclock of the last transaction issued to wal. */
+	struct vclock tx_vclock;
+	/* Condition fired when a transaction was sent to wal. */
+	struct fiber_cond tx_vclock_cond;
+	/* List of appliers in reading state. */
+	struct rlist network;
+	/* List of appliers waiting for worker to be read. */
+	struct rlist idle;
+	/* Condition fired when there is an applier without reader. */
+	struct fiber_cond idle_cond;
+	/* shared diagnostic area. */
+	struct diag diag;
+};
+
+/* An applier connected to a sequencer. */
+struct sequencer_client {
+	/* rlist anchor. */
+	struct rlist list;
+	/* Applier reference. */
+	struct applier *applier;
+	/* True if the applier disconnected from a sequencer. */
+	bool done;
+	/* Condition fired when the applier is going to be disconnected. */
+	struct fiber_cond done_cond;
+	/* Diagnostic area. */
+	struct diag diag;
+	/* Fiber currently reading from the applier socket. */
+	struct fiber *listener;
+	/* Count of worker processing current applier. */
+	uint32_t worker_count;
+	/* Master vclock at subscibe time. */
+	struct vclock vclock_at_subscribe;
+};
+
+/* True is sequencer is in failed state. */
+static inline bool
+sequencer_is_aborted(struct sequencer *sequencer)
+{
+	return !diag_is_empty(&sequencer->diag);
+}
+
+static inline void
+sequencer_abort(struct sequencer *sequencer)
+{
+	say_error("ABO");
+	if (sequencer_is_aborted(sequencer)) {
+		diag_clear(&fiber()->diag);
+		return;
+	}
+	diag_move(&fiber()->diag, &sequencer->diag);
+	/* Cancel all client that are in network. */
+	struct sequencer_client *client;
+	rlist_foreach_entry(client, &sequencer->network, list) {
+		fiber_cancel(client->listener);
+		say_error("CNC");
+		}
+}
+
+/* True if a sequencer client is in failed state. */
+static inline bool
+sequencer_client_is_aborted(struct sequencer *sequencer,
+			    struct sequencer_client *client)
+{
+	return !diag_is_empty(&client->diag) || sequencer_is_aborted(sequencer);
+}
+
+static inline void
+sequencer_client_abort(struct sequencer *sequencer,
+		       struct sequencer_client *client,
+		       bool force)
+{
+	if (client->listener != NULL) {
+		fiber_cancel(client->listener);
+	}
+	client->listener = NULL;
+	rlist_del(&client->list);
+	if (sequencer_client_is_aborted(sequencer, client)) {
+		/* Don't override the first known error. */
+		diag_clear(&fiber()->diag);
+		return;
+	}
+	if (force)
+		/* Abort sequencer. */
+		sequencer_abort(sequencer);
+	else
+		diag_move(&fiber()->diag, &client->diag);
+}
+
+static inline void
+sequencer_client_check(struct sequencer *sequencer,
+		       struct sequencer_client *client)
+{
+	if (sequencer_client_is_aborted(sequencer, client))
+		/* Count not continue processing. */
+		tnt_raise(ClientError, ER_TRANSACTION_CONFLICT);
+}
+
+/* Detach an applier from a sequencer. */
+static void
+sequencer_detach(struct sequencer *sequencer, struct sequencer_client *client)
+{
+	if (diag_is_empty(&client->diag))
+		diag_add_error(&client->diag,
+			       diag_last_error(&sequencer->diag));
+	client->done = true;
+	fiber_cond_signal(&client->done_cond);
+	if (rlist_empty(&sequencer->idle) &&
+	    rlist_empty(&sequencer->network)) {
+		/* Sequencer hasn't any connected applier, reset its state. */
+		diag_clear(&sequencer->diag);
+		vclock_copy(&sequencer->tx_vclock, &replicaset.vclock);
+		vclock_copy(&sequencer->net_vclock, &replicaset.vclock);
+	}
+}
+
+/*
+ * Acquire an applier from a sequencers idle list.
+ */
+static inline struct sequencer_client *
+sequencer_get(struct sequencer *sequencer)
+{
+	if (rlist_empty(&sequencer->idle))
+		return NULL;
+	struct sequencer_client *client;
+	client = rlist_first_entry(&sequencer->idle,
+				   struct sequencer_client, list);
+	++client->worker_count;
+	return client;
+}
+
+/*
+ * Release an applier.
+ */
+static inline void
+sequencer_put(struct sequencer *sequencer, struct sequencer_client *client)
+{
+	if (--client->worker_count == 0 &&
+	    sequencer_client_is_aborted(sequencer, client))
+		/*
+		 * Applier is in failed state and there are no workers more
+		 * so detach it from the sequencer.
+		 */
+		sequencer_detach(sequencer, client);
+}
+
+/*
+ * Attach an applier to a sequencer and wait until
+ * the applier was not detached.
+ */
+static void
+sequencer_attach(struct sequencer *sequencer, struct applier *applier,
+		 struct vclock *vclock_at_subscribe)
+{
+	struct sequencer_client client;
+	if (sequencer_is_aborted(sequencer)) {
+		/*
+		 * The sequencer is in failed state, raise an error
+		 * immediately.
+		 */
+		diag_add_error(&fiber()->diag,
+			       diag_last_error(&sequencer->diag));
+		diag_raise();
+	}
+	rlist_create(&client.list);
+	client.applier = applier;
+	client.done = false;
+	fiber_cond_create(&client.done_cond);
+	diag_create(&client.diag);
+	client.listener = NULL;
+	client.worker_count = 0;
+	vclock_copy(&client.vclock_at_subscribe, vclock_at_subscribe);
+
+	rlist_add_tail(&sequencer->idle, &client.list);
+	fiber_cond_signal(&sequencer->idle_cond);
+	while (!client.done) {
+		fiber_cond_wait(&client.done_cond);
+		if (fiber_is_cancelled()) {
+			/* Applier is going do be stopped by cfg. */
+			if (client.listener != NULL)
+				/* Cancel network fiber. */
+				fiber_cancel(client.listener);
+		}
+	}
+
+	if (sequencer_is_aborted(sequencer))
+		diag_add_error(&fiber()->diag,
+			       diag_last_error(&sequencer->diag));
+	else
+		diag_move(&client.diag, &fiber()->diag);
+	diag_raise();
+}
+
+/*
+ * Read from applier until a new transaction was read.
+ * Return transaction rows and previous lsn value.
+ */
+static void
+sequencer_read_tx(struct sequencer *sequencer,
+		  struct sequencer_client *client, struct stailq *rows,
+		  int64_t *prev_lsn)
+{
+	struct applier *applier = client->applier;
+	/* Move the client into network list. */
+	rlist_move_tail(&sequencer->network, &client->list);
+	client->listener = fiber();
+
+	/* Read a transaction from a network. */
+restart:
+	try {
+		applier_read_tx(client->applier, rows);
+	} catch (...) {
+		client->listener = NULL;
+		rlist_del(&client->list);
+		throw;
+	}
+	applier->last_row_time = ev_monotonic_now(loop());
+	if (ibuf_used(&applier->ibuf) == 0)
+		ibuf_reset(&applier->ibuf);
+	sequencer_client_check(sequencer, client);
+	struct xrow_header *first_row =
+		&stailq_first_entry(rows, struct applier_tx_row,
+				    next)->row;
+	if (first_row->lsn <= vclock_get(&sequencer->net_vclock,
+					 first_row->replica_id)) {
+		/*
+		 * We already have fetched this transaction, reply with a
+		 * status and read the next one.
+		 */
+		applier_update_state(client->applier,
+				     &client->vclock_at_subscribe);
+		goto restart;
+	}
+	/*
+	 * Remember a lsn of the previous transaction and follow
+	 * network vclock.
+	 */
+	*prev_lsn = vclock_get(&sequencer->net_vclock, first_row->replica_id);
+	vclock_follow(&sequencer->net_vclock, first_row->replica_id,
+		      first_row->lsn);
+
+	/* Allow to schedule the next transaction reading. */
+	rlist_move_tail(&sequencer->idle, &client->list);
+	fiber_cond_signal(&sequencer->idle_cond);
+}
+
+/*
+ * Wait until the previous transaction was processed and sent to wal then
+ * apply the current one.
+ */
+static void
+sequencer_apply_tx(struct sequencer *sequencer,
+		   struct sequencer_client *client, struct stailq *rows,
+		   int64_t *prev_lsn)
+{
+	struct xrow_header *first_row =
+		&stailq_first_entry(rows, struct applier_tx_row,
+				    next)->row;
+	/*
+	 * We could apply the current transaction only after
+	 * the previous one was processed by tx and sent to
+	 * the wal.
+	 */
+	while (vclock_get(&sequencer->tx_vclock,
+			  first_row->replica_id) != *prev_lsn) {
+		fiber_cond_wait(&sequencer->tx_vclock_cond);
+		sequencer_client_check(sequencer, client);
+	}
+	/*
+	 * The previous transaction was sent to wal and it's
+	 * a high time to process the current one.
+	 */
+	struct txn *txn;
+	txn = txn_begin(false);
+	if (txn == NULL ||
+	    applier_apply_tx(rows, txn) != 0 ||
+	    txn_prepare(txn) != 0)
+		diag_raise();
+	/*
+	 * We are ready to commit the transaction so
+	 * forward tx vclock to allow processing of the next
+	 * transaction.
+	 */
+	vclock_follow(&sequencer->tx_vclock,
+		      first_row->replica_id,
+		      first_row->lsn);
+	fiber_cond_signal(&sequencer->tx_vclock_cond);
+	if (txn_commit(txn) != 0)
+		diag_raise();
+	/* Report local status to the master. */
+	if (client->applier->state == APPLIER_SYNC ||
+	    client->applier->state == APPLIER_FOLLOW)
+		fiber_cond_signal(&client->applier->writer_cond);
+}
+
+/*
+ * Sequencer worker fiber.
+ * This fiber gets an applier from idle list and read one transaction from
+ * a network. After networking worker returns the applier into tail of idle list
+ * in order to allow reading and processing of further transactions.
+ * For failed networking only the current applier is marked as failed and
+ * going to be removed from a sequencer.
+ * If apply or commit fail then a sequencer has ho chance to continue working
+ * because of broken transaction sequence. In that case the sequencer set
+ * failed flag and waits until all in-fly transaction processing is finished.
+ */
+static int
+sequencer_f(va_list ap)
+{
+	struct sequencer *sequencer = va_arg(ap, struct sequencer *);
+	++sequencer->worker_count;
+	/*
+	 * Set correct session type for use in on_replace()
+	 * triggers.
+	 */
+	struct session *session = session_create_on_demand();
+	if (session == NULL)
+		return -1;
+	session_set_type(session, SESSION_TYPE_APPLIER);
+
+	while (!fiber_is_cancelled()) {
+		struct sequencer_client *client = sequencer_get(sequencer);
+		if (client == NULL) {
+			/* Wait for an applier to read from network. */
+			++sequencer->idle_worker_count;
+			fiber_cond_wait(&sequencer->idle_cond);
+			--sequencer->idle_worker_count;
+			continue;
+		}
+		int64_t prev_lsn;
+		struct stailq rows;
+		bool network = true;
+		try {
+			sequencer_read_tx(sequencer, client, &rows, &prev_lsn);
+			network = false;
+			sequencer_apply_tx(sequencer, client, &rows, &prev_lsn);
+			applier_update_state(client->applier,
+					     &client->vclock_at_subscribe);
+		} catch (...) {
+			txn_rollback();
+			sequencer_client_abort(sequencer, client,
+					       network == false);
+		}
+		sequencer_put(sequencer, client);
+	}
+	--sequencer->worker_count;
+	return 0;
+}
+
+/*
+ * Sequencer scheduler fiber.
+ * The scheduling target is to don't have any applier in the idle state
+ * (without network reading worker.
+ * It shares the idle condition with workers so it isn't possible to have
+ * this condition without a waiter. Also false positives are possible -
+ * scheduler might be woken up when there are idle workers. So scheduler just
+ * forward fiber_cond_signal in such cases.
+ */
+static int
+sequencer_scheduler_f(va_list ap)
+{
+	struct sequencer *sequencer = va_arg(ap, struct sequencer *);
+
+	while (!fiber_is_cancelled()) {
+		fiber_cond_wait(&sequencer->idle_cond);
+		if (rlist_empty(&sequencer->idle))
+			/* No idle appliers. */
+			continue;
+
+		if (sequencer->idle_worker_count > 0) {
+			/* There are more idle workers - wake one of them. */
+			fiber_cond_signal(&sequencer->idle_cond);
+			fiber_reschedule();
+			continue;
+		}
+		if (sequencer->worker_count < 768) {
+			/* Spawn a new worker. */
+			struct fiber *f = fiber_new("sequencer", sequencer_f);
+			if (f == NULL)
+				say_error("Couldn't create sequencer worker");
+			else
+				fiber_start(f, sequencer);
+		}
+	}
+	return 0;
+}
+
+/* Sequencer singleton. */
+static struct sequencer sequencer_singleton;
+struct sequencer *sequencer = NULL;
+
+/*
+ * Create a sequencer.
+ */
+static void
+sequencer_create(struct sequencer *sequencer)
+{
+	sequencer->worker_count = 0;
+	sequencer->idle_worker_count = 0;
+	vclock_create(&sequencer->net_vclock);
+	vclock_create(&sequencer->tx_vclock);
+	fiber_cond_create(&sequencer->tx_vclock_cond);
+	rlist_create(&sequencer->network);
+	rlist_create(&sequencer->idle);
+	fiber_cond_create(&sequencer->idle_cond);
+	struct fiber *f = fiber_new_xc("sequencer_scheduler",
+				       sequencer_scheduler_f);
+	fiber_start(f, sequencer);
 }
 
 /**
@@ -598,6 +1035,11 @@ applier_apply_tx(struct stailq *rows)
 static void
 applier_subscribe(struct applier *applier)
 {
+	if (sequencer == NULL) {
+		/* Initialize the sequencer singleton. */
+		sequencer_create(&sequencer_singleton);
+		sequencer = &sequencer_singleton;
+	}
 	/* Send SUBSCRIBE request */
 	struct ev_io *coio = &applier->io;
 	struct ibuf *ibuf = &applier->ibuf;
@@ -708,49 +1150,7 @@ applier_subscribe(struct applier *applier)
 			applier_set_state(applier, APPLIER_FOLLOW);
 		}
 
-		/*
-		 * Stay 'orphan' until appliers catch up with
-		 * the remote vclock at the time of SUBSCRIBE
-		 * and the lag is less than configured.
-		 */
-		if (applier->state == APPLIER_SYNC &&
-		    applier->lag <= replication_sync_lag &&
-		    vclock_compare(&remote_vclock_at_subscribe,
-				   &replicaset.vclock) <= 0) {
-			/* Applier is synced, switch to "follow". */
-			applier_set_state(applier, APPLIER_FOLLOW);
-		}
-
-		struct stailq rows;
-		applier_read_tx(applier, &rows);
-
-		struct xrow_header *first_row =
-			&stailq_first_entry(&rows, struct applier_tx_row,
-					    next)->row;
-		applier->last_row_time = ev_monotonic_now(loop());
-		struct replica *replica = replica_by_id(first_row->replica_id);
-		struct latch *latch = (replica ? &replica->order_latch :
-				       &replicaset.applier.order_latch);
-		/*
-		 * In a full mesh topology, the same set of changes
-		 * may arrive via two concurrently running appliers.
-		 * Hence we need a latch to strictly order all changes
-		 * that belong to the same server id.
-		 */
-		latch_lock(latch);
-		if (vclock_get(&replicaset.vclock, first_row->replica_id) <
-		    first_row->lsn &&
-		    applier_apply_tx(&rows) != 0) {
-			latch_unlock(latch);
-			diag_raise();
-		}
-		latch_unlock(latch);
-
-		if (applier->state == APPLIER_SYNC ||
-		    applier->state == APPLIER_FOLLOW)
-			fiber_cond_signal(&applier->writer_cond);
-		if (ibuf_used(ibuf) == 0)
-			ibuf_reset(ibuf);
+		sequencer_attach(sequencer, applier, &remote_vclock_at_subscribe);
 		fiber_gc();
 	}
 }
@@ -775,14 +1175,6 @@ static int
 applier_f(va_list ap)
 {
 	struct applier *applier = va_arg(ap, struct applier *);
-	/*
-	 * Set correct session type for use in on_replace()
-	 * triggers.
-	 */
-	struct session *session = session_create_on_demand();
-	if (session == NULL)
-		return -1;
-	session_set_type(session, SESSION_TYPE_APPLIER);
 
 	/* Re-connect loop */
 	while (!fiber_is_cancelled()) {

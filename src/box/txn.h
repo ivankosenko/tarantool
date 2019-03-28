@@ -161,6 +161,8 @@ struct txn {
 	bool is_aborted;
 	/** True if on_commit and on_rollback lists are non-empty. */
 	bool has_triggers;
+	/** True is the transaction is already prepared. */
+	bool is_prepared;
 	/** The number of active nested statement-level transactions. */
 	int8_t in_sub_stmt;
 	/**
@@ -202,6 +204,15 @@ in_txn()
  */
 struct txn *
 txn_begin(bool is_autocommit);
+
+/**
+ * Prepare a transaction.
+ * @pre txn == in_txn()
+ *
+ * Return 0 on success. On error return -1.
+ */
+int
+txn_prepare(struct txn *txn);
 
 /**
  * Commit a transaction.
