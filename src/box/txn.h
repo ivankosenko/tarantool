@@ -132,6 +132,8 @@ struct autoinc_id_entry {
 };
 
 struct txn {
+	struct stailq_entry list;
+	struct region region;
 	/**
 	 * A sequentially growing transaction id, assigned when
 	 * a transaction is initiated. Used to identify
