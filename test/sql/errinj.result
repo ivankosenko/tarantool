@@ -463,3 +463,137 @@ errinj.set("ERRINJ_SQL_NAME_NORMALIZATION", false)
 ---
 - ok
 ...
+--
+-- Tests which are aimed at verifying work of commit/rollback
+-- triggers on _ck_constraint space.
+--
+s = box.schema.space.create('test', {format = {{name = 'X', type = 'unsigned'}}})
+---
+...
+pk = box.space.test:create_index('pk')
+---
+...
+errinj.set("ERRINJ_WAL_IO", true)
+---
+- ok
+...
+_ = box.space._ck_constraint:insert({'CK_CONSTRAINT_01', s.id, false, 'X<5', 'SQL'})
+---
+- error: Failed to write to disk
+...
+errinj.set("ERRINJ_WAL_IO", false)
+---
+- ok
+...
+_ = box.space._ck_constraint:insert({'CK_CONSTRAINT_01', s.id, false, 'X<5', 'SQL'})
+---
+...
+box.execute("INSERT INTO \"test\" VALUES(5);")
+---
+- error: 'Failed to execute SQL statement: CHECK constraint failed: CK_CONSTRAINT_01'
+...
+errinj.set("ERRINJ_WAL_IO", true)
+---
+- ok
+...
+_ = box.space._ck_constraint:replace({'CK_CONSTRAINT_01', s.id, false, 'X<=5', 'SQL'})
+---
+- error: Failed to write to disk
+...
+errinj.set("ERRINJ_WAL_IO", false)
+---
+- ok
+...
+_ = box.space._ck_constraint:replace({'CK_CONSTRAINT_01', s.id, false, 'X<=5', 'SQL'})
+---
+...
+box.execute("INSERT INTO \"test\" VALUES(5);")
+---
+- row_count: 1
+...
+errinj.set("ERRINJ_WAL_IO", true)
+---
+- ok
+...
+_ = box.space._ck_constraint:delete({'CK_CONSTRAINT_01', s.id})
+---
+- error: Failed to write to disk
+...
+box.execute("INSERT INTO \"test\" VALUES(6);")
+---
+- error: 'Failed to execute SQL statement: CHECK constraint failed: CK_CONSTRAINT_01'
+...
+errinj.set("ERRINJ_WAL_IO", false)
+---
+- ok
+...
+_ = box.space._ck_constraint:delete({'CK_CONSTRAINT_01', s.id})
+---
+...
+box.execute("INSERT INTO \"test\" VALUES(6);")
+---
+- row_count: 1
+...
+s:drop()
+---
+...
+--
+-- Test that failed space alter doesn't harm ck constraints
+--
+s = box.schema.create_space('test')
+---
+...
+_ = s:create_index('pk')
+---
+...
+s:format({{name='X', type='integer'}, {name='Y', type='integer'}})
+---
+...
+_ = box.space._ck_constraint:insert({'XlessY', s.id, false, 'X < Y', 'SQL'})
+---
+...
+_ = box.space._ck_constraint:insert({'Xgreater10', s.id, false, 'X > 10', 'SQL'})
+---
+...
+box.execute("INSERT INTO \"test\" VALUES(2, 1);")
+---
+- error: 'Failed to execute SQL statement: CHECK constraint failed: Xgreater10'
+...
+box.execute("INSERT INTO \"test\" VALUES(20, 10);")
+---
+- error: 'Failed to execute SQL statement: CHECK constraint failed: XlessY'
+...
+box.execute("INSERT INTO \"test\" VALUES(20, 100);")
+---
+- row_count: 1
+...
+s:truncate()
+---
+...
+errinj.set("ERRINJ_WAL_IO", true)
+---
+- ok
+...
+s:format({{name='Y', type='integer'}, {name='X', type='integer'}})
+---
+- error: Failed to write to disk
+...
+errinj.set("ERRINJ_WAL_IO", false)
+---
+- ok
+...
+box.execute("INSERT INTO \"test\" VALUES(2, 1);")
+---
+- error: 'Failed to execute SQL statement: CHECK constraint failed: XlessY'
+...
+box.execute("INSERT INTO \"test\" VALUES(20, 10);")
+---
+- error: 'Failed to execute SQL statement: CHECK constraint failed: XlessY'
+...
+box.execute("INSERT INTO \"test\" VALUES(20, 100);")
+---
+- row_count: 1
+...
+s:drop()
+---
+...

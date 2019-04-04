@@ -74,6 +74,7 @@ local function set_system_triggers(val)
     box.space._schema:run_triggers(val)
     box.space._cluster:run_triggers(val)
     box.space._fk_constraint:run_triggers(val)
+    box.space._ck_constraint:run_triggers(val)
 end
 
 --------------------------------------------------------------------------------
@@ -94,6 +95,7 @@ local function erase()
     truncate(box.space._schema)
     truncate(box.space._cluster)
     truncate(box.space._fk_constraint)
+    truncate(box.space._ck_constraint)
 end
 
 local function create_sysview(source_id, target_id)
@@ -737,6 +739,46 @@ local function upgrade_to_2_1_3()
     end
 end
 
+local function upgrade_to_2_2_0()
+    -- In previous Tarantool releases check constraints were
+    -- stored in space opts. Now we use separate space
+    -- _ck_constraint for this purpose. Perform legacy data
+    -- migration.
+    local MAP = setmap({})
+    local _space = box.space[box.schema.SPACE_ID]
+    local _index = box.space[box.schema.INDEX_ID]
+    local _ck_constraint = box.space[box.schema.CK_CONSTRAINT_ID]
+    log.info("create space _ck_constraint")
+    local format = {{name='name', type='string'},
+                    {name='space_id', type='unsigned'},
+                    {name='is_deferred', type='boolean'},
+                    {name='code', type='str'}, {name='language', type='str'}}
+    _space:insert{_ck_constraint.id, ADMIN, '_ck_constraint', 'memtx', 0, MAP, format}
+
+    log.info("create index primary on _ck_constraint")
+    _index:insert{_ck_constraint.id, 0, 'primary', 'tree',
+                  {unique = true}, {{0, 'string'}, {1, 'unsigned'}}}
+
+    log.info("create secondary index child_id on _ck_constraint")
+    _index:insert{_ck_constraint.id, 1, 'space_id', 'tree',
+                  {unique = false}, {{1, 'unsigned'}}}
+    for _, space in _space:pairs() do
+        local flags = space.flags
+        if flags['checks'] ~= nil then
+            for i, check in pairs(flags['checks']) do
+                local expr_str = check.expr
+                local check_name = check.name or
+                                   "CK_CONSTRAINT_"..i.."_"..space.name
+                _ck_constraint:insert({check_name, space.id, false, expr_str, 'SQL'})
+            end
+            flags['checks'] = nil
+            _space:replace(box.tuple.new({space.id, space.owner, space.name,
+                                          space.engine, space.field_count,
+                                          flags, space.format}))
+        end
+    end
+end
+
 local function get_version()
     local version = box.space._schema:get{'version'}
     if version == nil then
@@ -768,6 +810,7 @@ local function upgrade(options)
         {version = mkversion(2, 1, 1), func = upgrade_to_2_1_1, auto = true},
         {version = mkversion(2, 1, 2), func = upgrade_to_2_1_2, auto = true},
         {version = mkversion(2, 1, 3), func = upgrade_to_2_1_3, auto = true},
+        {version = mkversion(2, 2, 0), func = upgrade_to_2_2_0, auto = true},
     }
 
     for _, handler in ipairs(handlers) do
