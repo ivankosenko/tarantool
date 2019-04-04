@@ -169,34 +169,65 @@ int
 box_process_rw(struct request *request, struct space *space,
 	       struct tuple **result)
 {
+	struct tuple *tuple = NULL;
+	struct txn *txn = in_txn();
+	bool is_autocommit = txn == NULL;
+	if (is_autocommit && (txn = txn_begin()) == NULL)
+		return -1;
 	assert(iproto_type_is_dml(request->type));
 	rmean_collect(rmean_box, request->type, 1);
 	if (access_check_space(space, PRIV_W) != 0)
-		return -1;
-	struct txn *txn = txn_begin_stmt(space);
-	if (txn == NULL)
-		return -1;
-	struct tuple *tuple;
+		goto fail;
+	if (txn_begin_stmt(space) == NULL)
+		goto fail;
 	if (space_execute_dml(space, txn, request, &tuple) != 0) {
 		txn_rollback_stmt();
-		return -1;
+		goto fail;
 	}
-	if (result == NULL)
-		return txn_commit_stmt(txn, request);
-	*result = tuple;
-	if (tuple == NULL)
-		return txn_commit_stmt(txn, request);
 	/*
 	 * Pin the tuple locally before the commit,
 	 * otherwise it may go away during yield in
 	 * when WAL is written in autocommit mode.
 	 */
+	if (result != NULL)
+		*result = tuple;
+
+	if (result == NULL || tuple == NULL) {
+		if (!is_autocommit)
+			return txn_commit_stmt(txn, request);
+		/* Autocommit mode. */
+		if (txn_commit_stmt(txn, request) != 0) {
+			txn_rollback();
+			return -1;
+		}
+		if (txn_commit(txn) != 0)
+			return -1;
+		fiber_gc();
+		return 0;
+	}
 	tuple_ref(tuple);
-	int rc = txn_commit_stmt(txn, request);
-	if (rc == 0)
-		tuple_bless(tuple);
+
+	if (txn_commit_stmt(txn, request)) {
+		/* Unref tuple and rollback if autocommit. */
+		tuple_unref(tuple);
+		goto fail;
+	}
+	if (is_autocommit) {
+		if (txn_commit(txn) != 0) {
+			/* Unref tuple and exit. */
+			tuple_unref(tuple);
+			return -1;
+		}
+	        fiber_gc();
+	}
+	tuple_bless(tuple);
 	tuple_unref(tuple);
-	return rc;
+	return 0;
+
+fail:
+	if (is_autocommit)
+		txn_rollback();
+	return -1;
 }
 
 void
@@ -299,8 +330,12 @@ apply_wal_row(struct xstream *stream, struct xrow_header *row)
 	xrow_decode_dml_xc(row, &request, dml_request_key_map(row->type));
 	if (request.type != IPROTO_NOP) {
 		struct space *space = space_cache_find_xc(request.space_id);
-		if (box_process_rw(&request, space, NULL) != 0) {
+		struct txn *txn = txn_begin();
+		if (txn == NULL || box_process_rw(&request, space, NULL) != 0 ||
+		    txn_commit(txn) != 0) {
 			say_error("error applying row: %s", request_str(&request));
+			if (txn != NULL)
+				txn_rollback();
 			diag_raise();
 		}
 	}
@@ -1313,8 +1348,15 @@ box_sequence_reset(uint32_t seq_id)
 static inline void
 box_register_replica(uint32_t id, const struct tt_uuid *uuid)
 {
+	struct txn *txn = txn_begin();
+	if (txn == NULL)
+		diag_raise();
 	if (boxk(IPROTO_INSERT, BOX_CLUSTER_ID, "[%u%s]",
-		 (unsigned) id, tt_uuid_str(uuid)) != 0)
+		 (unsigned) id, tt_uuid_str(uuid)) != 0) {
+		txn_rollback();
+		diag_raise();
+	}
+	if (txn_commit(txn) != 0)
 		diag_raise();
 	assert(replica_by_uuid(uuid)->id == id);
 }
@@ -1636,9 +1678,16 @@ box_set_replicaset_uuid(const struct tt_uuid *replicaset_uuid)
 		uu = *replicaset_uuid;
 	else
 		tt_uuid_create(&uu);
+	struct txn *txn = txn_begin();
+	if (txn == NULL)
+		diag_raise();
 	/* Save replica set UUID in _schema */
 	if (boxk(IPROTO_INSERT, BOX_SCHEMA_ID, "[%s%s]", "cluster",
-		 tt_uuid_str(&uu)))
+		 tt_uuid_str(&uu))) {
+		txn_rollback();
+		diag_raise();
+	}
+	if (txn_commit(txn) != 0)
 		diag_raise();
 }
 
