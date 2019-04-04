@@ -155,11 +155,6 @@ struct txn {
 	 */
 	int n_applier_rows;
 	/**
-	 * True if this transaction is running in autocommit mode
-	 * (statement end causes an automatic transaction commit).
-	 */
-	bool is_autocommit;
-	/**
 	 * True if the transaction was aborted so should be
 	 * rolled back at commit.
 	 */
@@ -206,7 +201,7 @@ in_txn()
  * @pre no transaction is active
  */
 struct txn *
-txn_begin(bool is_autocommit);
+txn_begin();
 
 /**
  * Commit a transaction.

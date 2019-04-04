@@ -173,7 +173,7 @@ txn_free(struct txn *txn)
 }
 
 struct txn *
-txn_begin(bool is_autocommit)
+txn_begin()
 {
 	static int64_t tsn = 0;
 	assert(! in_txn());
@@ -186,7 +186,6 @@ txn_begin(bool is_autocommit)
 	txn->n_new_rows = 0;
 	txn->n_local_rows = 0;
 	txn->n_applier_rows = 0;
-	txn->is_autocommit = is_autocommit;
 	txn->has_triggers  = false;
 	txn->is_aborted = false;
 	txn->in_sub_stmt = 0;
@@ -224,19 +223,15 @@ txn_begin_stmt(struct space *space)
 {
 	struct txn *txn = in_txn();
 	if (txn == NULL) {
-		txn = txn_begin(true);
-		if (txn == NULL)
-			return NULL;
+		diag_set(ClientError, ER_NO_TRANSACTION);
+		return NULL;
 	} else if (txn->in_sub_stmt > TXN_SUB_STMT_MAX) {
 		diag_set(ClientError, ER_SUB_STMT_MAX);
 		return NULL;
 	}
 	struct txn_stmt *stmt = txn_stmt_new(txn);
-	if (stmt == NULL) {
-		if (txn->is_autocommit && txn->in_sub_stmt == 0)
-			txn_rollback();
+	if (stmt == NULL)
 		return NULL;
-	}
 	if (space == NULL)
 		return txn;
 
@@ -271,8 +266,7 @@ txn_is_distributed(struct txn *txn)
 }
 
 /**
- * End a statement. In autocommit mode, end
- * the current transaction as well.
+ * End a statement.
  */
 int
 txn_commit_stmt(struct txn *txn, struct request *request)
@@ -315,11 +309,6 @@ txn_commit_stmt(struct txn *txn, struct request *request)
 			goto fail;
 	}
 	--txn->in_sub_stmt;
-	if (txn->is_autocommit && txn->in_sub_stmt == 0) {
-		int rc = txn_commit(txn);
-		fiber_gc();
-		return rc;
-	}
 	return 0;
 fail:
 	txn_rollback_stmt();
@@ -446,8 +435,6 @@ txn_rollback_stmt()
 	if (txn == NULL || txn->in_sub_stmt == 0)
 		return;
 	txn->in_sub_stmt--;
-	if (txn->is_autocommit && txn->in_sub_stmt == 0)
-		return txn_rollback();
 	txn_rollback_to_svp(txn, txn->sub_stmt_begin[txn->in_sub_stmt]);
 }
 
@@ -518,7 +505,7 @@ box_txn_begin()
 		diag_set(ClientError, ER_ACTIVE_TRANSACTION);
 		return -1;
 	}
-	if (txn_begin(false) == NULL)
+	if (txn_begin() == NULL)
 		return -1;
 	return 0;
 }
