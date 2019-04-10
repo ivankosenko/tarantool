@@ -221,9 +221,12 @@ txn_begin();
 int
 txn_commit(struct txn *txn);
 
-/** Rollback a transaction, if any. */
+/**
+ * Rollback a transaction.
+ * @pre txn == in_txn()
+ */
 void
-txn_rollback();
+txn_rollback(struct txn *txn);
 
 /**
  * Roll back the transaction but keep the object around.
@@ -267,6 +270,10 @@ txn_on_rollback(struct txn *txn, struct trigger *trigger)
 
 /**
  * Start a new statement.
+<<<<<<< HEAD
+=======
+ * Return the new statement or NULL in case of error.
+>>>>>>> 398e84f70... Get rid of fiber_gc from txn_rollback
  */
 struct txn_stmt *
 txn_begin_stmt(struct txn *txn, struct space *space);

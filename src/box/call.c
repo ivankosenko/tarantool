@@ -208,13 +208,17 @@ box_process_call(struct call_request *request, struct port *port)
 		fiber_set_user(fiber(), orig_credentials);
 
 	if (rc != 0) {
-		txn_rollback();
+		if (in_txn() != NULL)
+			txn_rollback(in_txn());
+		fiber_gc();
 		return -1;
 	}
 
 	if (in_txn()) {
 		diag_set(ClientError, ER_FUNCTION_TX_ACTIVE);
-		txn_rollback();
+		if (in_txn() != NULL)
+			txn_rollback(in_txn());
+		fiber_gc();
 		return -1;
 	}
 
@@ -229,13 +233,17 @@ box_process_eval(struct call_request *request, struct port *port)
 	if (access_check_universe(PRIV_X) != 0)
 		return -1;
 	if (box_lua_eval(request, port) != 0) {
-		txn_rollback();
+		if (in_txn() != NULL)
+			txn_rollback(in_txn());
+		fiber_gc();
 		return -1;
 	}
 
 	if (in_txn()) {
 		diag_set(ClientError, ER_FUNCTION_TX_ACTIVE);
-		txn_rollback();
+		if (in_txn() != NULL)
+			txn_rollback(in_txn());
+		fiber_gc();
 		return -1;
 	}
 
