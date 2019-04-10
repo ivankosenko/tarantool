@@ -68,7 +68,7 @@ txn_add_redo(struct txn *txn, struct txn_stmt *stmt, struct request *request)
 	row->lsn = 0;
 	row->sync = 0;
 	row->tm = 0;
-	row->bodycnt = xrow_encode_dml(request, row->body);
+	row->bodycnt = xrow_encode_dml(request, &txn->region, true, row->body);
 	if (row->bodycnt < 0)
 		return -1;
 	stmt->row = row;

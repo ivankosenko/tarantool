@@ -681,7 +681,8 @@ vy_stmt_encode_primary(struct tuple *value, struct key_def *key_def,
 	}
 	if (vy_stmt_meta_encode(value, &request, true) != 0)
 		return -1;
-	xrow->bodycnt = xrow_encode_dml(&request, xrow->body);
+	xrow->bodycnt = xrow_encode_dml(&request, &fiber()->gc, false,
+					xrow->body);
 	if (xrow->bodycnt < 0)
 		return -1;
 	return 0;
@@ -715,7 +716,8 @@ vy_stmt_encode_secondary(struct tuple *value, struct key_def *cmp_def,
 	}
 	if (vy_stmt_meta_encode(value, &request, false) != 0)
 		return -1;
-	xrow->bodycnt = xrow_encode_dml(&request, xrow->body);
+	xrow->bodycnt = xrow_encode_dml(&request, &fiber()->gc, false,
+					xrow->body);
 	if (xrow->bodycnt < 0)
 		return -1;
 	else
