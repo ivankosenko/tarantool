@@ -34,6 +34,7 @@
 #include <stdbool.h>
 #include "trigger.h"
 #include "salad/stailq.h"
+#include "trigger.h"
 
 #if defined(__cplusplus)
 extern "C" {
@@ -56,9 +57,14 @@ struct journal_entry {
 	 */
 	int64_t res;
 	/**
-	 * The fiber issuing the request.
+	 * Turns to true when entry is processed by wal.
 	 */
-	struct fiber *fiber;
+	bool done;
+	/**
+	 * Triggers fired when journal entry processing is done
+	 * despite of its success.
+	 */
+	struct rlist done_trigger;
 	/**
 	 * A trigger list to call if write failed. Triggers are going to be
 	 * fired before any other processing and are a good place to implement
@@ -108,6 +114,12 @@ struct journal {
 			 struct journal_entry *req);
 	void (*destroy)(struct journal *journal);
 };
+
+static inline void
+journal_entry_on_done(struct journal_entry *entry, struct trigger *trigger)
+{
+	trigger_add(&entry->done_trigger, trigger);
+}
 
 /**
  * Depending on the step of recovery and instance configuration
