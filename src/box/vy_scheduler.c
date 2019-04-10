@@ -889,8 +889,10 @@ vy_deferred_delete_batch_process_f(struct cmsg *cmsg)
 	for (int i = 0; i < batch->count; i++) {
 		if (vy_deferred_delete_process_one(deferred_delete_space,
 						   pk->space_id, pk->mem_format,
-						   &batch->stmt[i]) != 0)
+						   &batch->stmt[i]) != 0) {
+			txn_rollback(txn);
 			goto fail;
+		}
 	}
 
 	if (txn_commit(txn) != 0)
@@ -900,7 +902,7 @@ vy_deferred_delete_batch_process_f(struct cmsg *cmsg)
 fail:
 	batch->is_failed = true;
 	diag_move(diag_get(), &batch->diag);
-	txn_rollback();
+	fiber_gc();
 }
 
 /**

@@ -347,7 +347,7 @@ txn_write_to_wal(struct txn *txn)
 
 	if (res < 0) {
 		/* Cascading rollback. */
-		txn_rollback(); /* Perform our part of cascading rollback. */
+		txn_rollback(txn); /* Perform our part of cascading rollback. */
 		/*
 		 * Move fiber to end of event loop to avoid
 		 * execution of any new requests before all
@@ -396,7 +396,7 @@ txn_commit(struct txn *txn)
 	if (txn->n_new_rows + txn->n_applier_rows > 0) {
 		txn->signature = txn_write_to_wal(txn);
 		if (txn->signature < 0)
-			goto fail;
+			return -1;
 	}
 	/*
 	 * The transaction is in the binary log. No action below
@@ -424,7 +424,7 @@ txn_commit(struct txn *txn)
 	txn_free(txn);
 	return 0;
 fail:
-	txn_rollback();
+	txn_rollback(txn);
 	return -1;
 }
 
@@ -439,11 +439,9 @@ txn_rollback_stmt()
 }
 
 void
-txn_rollback()
+txn_rollback(struct txn *txn)
 {
-	struct txn *txn = in_txn();
-	if (txn == NULL)
-		return;
+	assert(txn == in_txn());
 	/* Rollback triggers must not throw. */
 	if (txn->has_triggers &&
 	    trigger_run(&txn->on_rollback, txn) != 0) {
@@ -458,8 +456,6 @@ txn_rollback()
 	stailq_foreach_entry(stmt, &txn->stmts, next)
 		txn_stmt_unref_tuples(stmt);
 
-	/** Free volatile txn memory. */
-	fiber_gc();
 	fiber_set_txn(fiber(), NULL);
 	txn_free(txn);
 }
@@ -535,11 +531,14 @@ int
 box_txn_rollback()
 {
 	struct txn *txn = in_txn();
+	if (txn == NULL)
+		return 0;
 	if (txn && txn->in_sub_stmt) {
 		diag_set(ClientError, ER_ROLLBACK_IN_SUB_STMT);
 		return -1;
 	}
-	txn_rollback(); /* doesn't throw */
+	txn_rollback(txn); /* doesn't throw */
+	fiber_gc();
 	return 0;
 }
 
@@ -617,6 +616,7 @@ txn_on_stop(struct trigger *trigger, void *event)
 {
 	(void) trigger;
 	(void) event;
-	txn_rollback();                 /* doesn't yield or fail */
+	txn_rollback(in_txn());                 /* doesn't yield or fail */
+
 }
 

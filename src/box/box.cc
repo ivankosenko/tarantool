@@ -197,9 +197,12 @@ box_process_rw(struct request *request, struct space *space,
 
 	if (txn_commit_stmt(txn, request) != 0)
 		goto fail;
+
 	if (autocommit) {
-		if (txn_commit(txn) != 0)
+		if (txn_commit(txn) != 0) {
+			txn = NULL;
 			goto fail;
+		}
 		fiber_gc();
 	}
 
@@ -212,8 +215,11 @@ box_process_rw(struct request *request, struct space *space,
 	return 0;
 
 fail:
-	if (autocommit)
-		txn_rollback();
+	if (autocommit) {
+		if (txn != NULL)
+			txn_rollback(txn);
+		fiber_gc();
+	}
 	if (tuple != NULL)
 		tuple_unref(tuple);
 	return -1;
@@ -323,8 +329,10 @@ apply_wal_row(struct xstream *stream, struct xrow_header *row)
 		if (txn == NULL || box_process_rw(&request, space, NULL) != 0 ||
 		    txn_commit(txn) != 0) {
 			say_error("error applying row: %s", request_str(&request));
-			if (txn != NULL)
-				txn_rollback();
+			if (txn != NULL) {
+				txn_rollback(txn);
+				fiber_gc();
+			}
 			diag_raise();
 		}
 	}
@@ -1342,7 +1350,8 @@ box_register_replica(uint32_t id, const struct tt_uuid *uuid)
 		diag_raise();
 	if (boxk(IPROTO_INSERT, BOX_CLUSTER_ID, "[%u%s]",
 		 (unsigned) id, tt_uuid_str(uuid)) != 0) {
-		txn_rollback();
+		txn_rollback(txn);
+		fiber_gc();
 		diag_raise();
 	}
 	if (txn_commit(txn) != 0)
@@ -1673,7 +1682,8 @@ box_set_replicaset_uuid(const struct tt_uuid *replicaset_uuid)
 	/* Save replica set UUID in _schema */
 	if (boxk(IPROTO_INSERT, BOX_SCHEMA_ID, "[%s%s]", "cluster",
 		 tt_uuid_str(&uu))) {
-		txn_rollback();
+		txn_rollback(txn);
+		fiber_gc();
 		diag_raise();
 	}
 	if (txn_commit(txn) != 0)
