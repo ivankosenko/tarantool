@@ -30,7 +30,6 @@
  */
 #include "journal.h"
 #include <small/region.h>
-#include <fiber.h>
 #include <diag.h>
 
 /**
@@ -66,11 +65,12 @@ journal_entry_new(size_t n_rows, struct region *region)
 		diag_set(OutOfMemory, size, "region", "struct journal_entry");
 		return NULL;
 	}
+	rlist_create(&entry->done_trigger);
 	entry->approx_len = 0;
 	entry->n_rows = n_rows;
 	rlist_create(&entry->error_trigger);
 	entry->res = -1;
-	entry->fiber = fiber();
+	entry->done = false;
 	return entry;
 }
 

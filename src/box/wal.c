@@ -260,8 +260,10 @@ tx_schedule_queue(struct stailq *queue)
 	 * are many ready fibers.
 	 */
 	struct journal_entry *req;
-	stailq_foreach_entry(req, queue, fifo)
-		fiber_wakeup(req->fiber);
+	stailq_foreach_entry(req, queue, fifo) {
+		req->done = true;
+		trigger_run(&req->done_trigger, NULL);
+	}
 }
 
 /**
@@ -1125,6 +1127,14 @@ wal_writer_f(va_list ap)
 	return 0;
 }
 
+static void
+on_wal_write_done(struct trigger *trigger, void *event)
+{
+	(void) event;
+	struct fiber_cond *cond = (struct fiber_cond *)trigger->data;
+	fiber_cond_signal(cond);
+}
+
 /**
  * WAL writer main entry point: queue a single request
  * to be written to disk and wait until this task is completed.
@@ -1175,15 +1185,19 @@ wal_write(struct journal *journal, struct journal_entry *entry)
 	batch->approx_len += entry->approx_len;
 	writer->wal_pipe.n_input += entry->n_rows * XROW_IOVMAX;
 	cpipe_flush_input(&writer->wal_pipe);
-	/**
-	 * It's not safe to spuriously wakeup this fiber
-	 * since in that case it will ignore a possible
-	 * error from WAL writer and not roll back the
-	 * transaction.
-	 */
-	bool cancellable = fiber_set_cancellable(false);
-	fiber_yield(); /* Request was inserted. */
-	fiber_set_cancellable(cancellable);
+
+	struct fiber_cond done_cond;
+	fiber_cond_create(&done_cond);
+
+	struct trigger done_trigger;
+	trigger_create(&done_trigger, on_wal_write_done, &done_cond, NULL);
+	journal_entry_on_done(entry, &done_trigger);
+	while (!entry->done)
+		fiber_cond_wait(&done_cond);
+
+	fiber_cond_destroy(&done_cond);
+	trigger_clear(&done_trigger);
+
 	return entry->res;
 }
 
