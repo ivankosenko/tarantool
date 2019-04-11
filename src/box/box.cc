@@ -311,10 +311,29 @@ recovery_journal_write(struct journal *base,
 	return vclock_sum(journal->vclock);
 }
 
+static int64_t
+recovery_journal_async_write(struct journal *base,
+			     struct journal_entry * /* entry */)
+{
+	(void) base;
+	return 0;
+}
+
+static int64_t
+recovery_journal_async_wait(struct journal *base,
+			    struct journal_entry * /* entry */)
+{
+	struct recovery_journal *journal = (struct recovery_journal *) base;
+	return vclock_sum(journal->vclock);
+}
+
 static inline void
 recovery_journal_create(struct recovery_journal *journal, struct vclock *v)
 {
-	journal_create(&journal->base, recovery_journal_write, NULL);
+	journal_create(&journal->base, recovery_journal_write,
+		       recovery_journal_async_write,
+		       recovery_journal_async_wait,
+		       NULL);
 	journal->vclock = v;
 }
 

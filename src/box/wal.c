@@ -64,6 +64,12 @@ static int64_t
 wal_write(struct journal *, struct journal_entry *);
 
 static int64_t
+wal_async_write(struct journal *, struct journal_entry *);
+
+static int64_t
+wal_async_wait(struct journal *, struct journal_entry *);
+
+static int64_t
 wal_write_in_wal_mode_none(struct journal *, struct journal_entry *);
 
 /*
@@ -362,7 +368,10 @@ wal_writer_create(struct wal_writer *writer, enum wal_mode wal_mode,
 	writer->wal_max_rows = wal_max_rows;
 	writer->wal_max_size = wal_max_size;
 	journal_create(&writer->base, wal_mode == WAL_NONE ?
-		       wal_write_in_wal_mode_none : wal_write, NULL);
+		       wal_write_in_wal_mode_none : wal_write,
+		       wal_mode == WAL_NONE ?
+		       wal_write_in_wal_mode_none: wal_async_write,
+		       wal_async_wait, NULL);
 
 	struct xlog_opts opts = xlog_opts_default;
 	opts.sync_is_async = true;
@@ -1135,12 +1144,8 @@ on_wal_write_done(struct trigger *trigger, void *event)
 	fiber_cond_signal(cond);
 }
 
-/**
- * WAL writer main entry point: queue a single request
- * to be written to disk and wait until this task is completed.
- */
 int64_t
-wal_write(struct journal *journal, struct journal_entry *entry)
+wal_async_write(struct journal *journal, struct journal_entry *entry)
 {
 	struct wal_writer *writer = (struct wal_writer *) journal;
 
@@ -1185,6 +1190,15 @@ wal_write(struct journal *journal, struct journal_entry *entry)
 	batch->approx_len += entry->approx_len;
 	writer->wal_pipe.n_input += entry->n_rows * XROW_IOVMAX;
 	cpipe_flush_input(&writer->wal_pipe);
+	return 0;
+}
+
+int64_t
+wal_async_wait(struct journal *journal, struct journal_entry *entry)
+{
+	(void) journal;
+	if (entry->done)
+		return entry->res;
 
 	struct fiber_cond done_cond;
 	fiber_cond_create(&done_cond);
@@ -1201,6 +1215,18 @@ wal_write(struct journal *journal, struct journal_entry *entry)
 	return entry->res;
 }
 
+/**
+ * WAL writer main entry point: queue a single request
+ * to be written to disk and wait until this task is completed.
+ */
+int64_t
+wal_write(struct journal *journal, struct journal_entry *entry)
+{
+	if (wal_async_write(journal, entry) != 0)
+		return -1;
+	return wal_async_wait(journal, entry);
+}
+
 int64_t
 wal_write_in_wal_mode_none(struct journal *journal,
 			   struct journal_entry *entry)
@@ -1212,7 +1238,9 @@ wal_write_in_wal_mode_none(struct journal *journal,
 		       entry->rows + entry->n_rows);
 	vclock_merge(&writer->vclock, &vclock_diff);
 	vclock_copy(&replicaset.vclock, &writer->vclock);
-	return vclock_sum(&writer->vclock);
+	entry->done = true;
+	entry->res = vclock_sum(&writer->vclock);
+	return entry->res;
 }
 
 void
