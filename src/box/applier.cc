@@ -200,8 +200,8 @@ static int
 process_nop(struct request *request)
 {
 	assert(request->type == IPROTO_NOP);
-	struct txn *txn = txn_begin_stmt(NULL);
-	if (txn == NULL)
+	struct txn *txn = in_txn();
+	if (txn_begin_stmt(txn, NULL) == NULL)
 		return -1;
 	return txn_commit_stmt(txn, request);
 }

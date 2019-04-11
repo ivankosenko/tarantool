@@ -32,6 +32,7 @@
  */
 #include <stdint.h>
 #include <stdbool.h>
+#include "trigger.h"
 #include "salad/stailq.h"
 
 #if defined(__cplusplus)

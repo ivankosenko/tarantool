@@ -267,10 +267,9 @@ txn_on_rollback(struct txn *txn, struct trigger *trigger)
 
 /**
  * Start a new statement.
- * Return 0 for succes and -1 in case of error.
  */
-struct txn *
-txn_begin_stmt(struct space *space);
+struct txn_stmt *
+txn_begin_stmt(struct txn *txn, struct space *space);
 
 int
 txn_begin_in_engine(struct engine *engine, struct txn *txn);
@@ -329,7 +328,7 @@ txn_commit_stmt(struct txn *txn, struct request *request);
  * rolls back the entire transaction.
  */
 void
-txn_rollback_stmt();
+txn_rollback_stmt(struct txn *txn);
 
 /**
  * Raise an error if this is a multi-statement transaction: DDL

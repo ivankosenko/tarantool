@@ -239,7 +239,7 @@ box_index_get(uint32_t space_id, uint32_t index_id, const char *key,
 	if (txn_begin_ro_stmt(space, &txn) != 0)
 		return -1;
 	if (index_get(index, key, part_count, result) != 0) {
-		txn_rollback_stmt();
+		txn_rollback_stmt(txn);
 		return -1;
 	}
 	txn_commit_ro_stmt(txn);
@@ -273,7 +273,7 @@ box_index_min(uint32_t space_id, uint32_t index_id, const char *key,
 	if (txn_begin_ro_stmt(space, &txn) != 0)
 		return -1;
 	if (index_min(index, key, part_count, result) != 0) {
-		txn_rollback_stmt();
+		txn_rollback_stmt(txn);
 		return -1;
 	}
 	txn_commit_ro_stmt(txn);
@@ -305,7 +305,7 @@ box_index_max(uint32_t space_id, uint32_t index_id, const char *key,
 	if (txn_begin_ro_stmt(space, &txn) != 0)
 		return -1;
 	if (index_max(index, key, part_count, result) != 0) {
-		txn_rollback_stmt();
+		txn_rollback_stmt(txn);
 		return -1;
 	}
 	txn_commit_ro_stmt(txn);
@@ -339,7 +339,7 @@ box_index_count(uint32_t space_id, uint32_t index_id, int type,
 		return -1;
 	ssize_t count = index_count(index, itype, key, part_count);
 	if (count < 0) {
-		txn_rollback_stmt();
+		txn_rollback_stmt(txn);
 		return -1;
 	}
 	txn_commit_ro_stmt(txn);
@@ -376,7 +376,7 @@ box_index_iterator(uint32_t space_id, uint32_t index_id, int type,
 	struct iterator *it = index_create_iterator(index, itype,
 						    key, part_count);
 	if (it == NULL) {
-		txn_rollback_stmt();
+		txn_rollback_stmt(txn);
 		return NULL;
 	}
 	txn_commit_ro_stmt(txn);

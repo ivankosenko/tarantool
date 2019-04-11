@@ -303,7 +303,6 @@ tx_schedule_rollback(struct cmsg *msg)
 	 * in-memory database state.
 	 */
 	stailq_reverse(&writer->rollback);
-	/* Must not yield. */
 	tx_schedule_queue(&writer->rollback);
 	stailq_create(&writer->rollback);
 	if (msg != &writer->in_rollback)
