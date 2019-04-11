@@ -44,8 +44,26 @@ dummy_journal_write(struct journal *journal, struct journal_entry *entry)
 	return 0;
 }
 
+static int64_t
+dummy_async_write(struct journal *journal, struct journal_entry *entry)
+{
+	(void) journal;
+	(void) entry;
+	return 0;
+}
+
+static int64_t
+dummy_async_wait(struct journal *journal, struct journal_entry *entry)
+{
+	(void) journal;
+	(void) entry;
+	return 0;
+}
+
 static struct journal dummy_journal = {
 	dummy_journal_write,
+	dummy_async_write,
+	dummy_async_wait,
 	NULL,
 };
 

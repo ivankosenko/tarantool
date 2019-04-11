@@ -112,6 +112,10 @@ journal_entry_on_error(struct journal_entry *entry, struct trigger *trigger)
 struct journal {
 	int64_t (*write)(struct journal *journal,
 			 struct journal_entry *req);
+	int64_t (*async_write)(struct journal *journal,
+			       struct journal_entry *req);
+	int64_t (*async_wait)(struct journal *journal,
+			      struct journal_entry *req);
 	void (*destroy)(struct journal *journal);
 };
 
@@ -137,6 +141,28 @@ static inline int64_t
 journal_write(struct journal_entry *entry)
 {
 	return current_journal->write(current_journal, entry);
+}
+
+/**
+ * Send a single entry to write.
+ *
+ * @return   0 if write was scheduled or -1 on error.
+ */
+static inline int64_t
+journal_async_write(struct journal_entry *entry)
+{
+	return current_journal->async_write(current_journal, entry);
+}
+
+/**
+ * Wait until entry processing finished.
+ * @return   a log sequence number (vclock signature) of the entry
+ *           or -1 on error.
+ */
+static inline int64_t
+journal_async_wait(struct journal_entry *entry)
+{
+	return current_journal->async_wait(current_journal, entry);
 }
 
 /**
@@ -171,9 +197,13 @@ journal_set(struct journal *new_journal)
 static inline void
 journal_create(struct journal *journal,
 	       int64_t (*write)(struct journal *, struct journal_entry *),
+	       int64_t (*async_write)(struct journal *, struct journal_entry *),
+	       int64_t (*async_wait)(struct journal *, struct journal_entry *),
 	       void (*destroy)(struct journal *))
 {
 	journal->write = write;
+	journal->async_write = async_write,
+	journal->async_wait = async_wait,
 	journal->destroy = destroy;
 }
 
