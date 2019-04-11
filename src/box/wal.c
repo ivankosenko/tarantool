@@ -300,7 +300,10 @@ tx_schedule_rollback(struct cmsg *msg)
 	 * in-memory database state.
 	 */
 	stailq_reverse(&writer->rollback);
-	/* Must not yield. */
+	/* Call error callback for each request before any scheduling. */
+	struct journal_entry *req;
+	stailq_foreach_entry(req, &writer->rollback, fifo)
+		trigger_run(&req->on_error, NULL);
 	tx_schedule_queue(&writer->rollback);
 	stailq_create(&writer->rollback);
 }

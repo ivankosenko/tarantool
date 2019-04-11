@@ -32,6 +32,7 @@
  */
 #include <stdint.h>
 #include <stdbool.h>
+#include "trigger.h"
 #include "salad/stailq.h"
 
 #if defined(__cplusplus)
@@ -59,6 +60,12 @@ struct journal_entry {
 	 */
 	struct fiber *fiber;
 	/**
+	 * A trigger list to call if write failed. Triggers are going to be
+	 * fired before any other processing and are a good place to implement
+	 * any rollback non-yielding behavior.
+	 */
+	struct rlist on_error;
+	/**
 	 * Approximate size of this request when encoded.
 	 */
 	size_t approx_len;
@@ -81,6 +88,15 @@ struct region;
  */
 struct journal_entry *
 journal_entry_new(size_t n_rows, struct region *region);
+
+/**
+ * Add an on_error trigger to a journal entry.
+ */
+static inline void
+journal_entry_on_error(struct journal_entry *entry, struct trigger *trigger)
+{
+	trigger_add(&entry->on_error, trigger);
+}
 
 /**
  * An API for an abstract journal for all transactions of this

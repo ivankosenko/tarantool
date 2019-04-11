@@ -218,14 +218,10 @@ txn_begin_in_engine(struct engine *engine, struct txn *txn)
 	return 0;
 }
 
-struct txn *
-txn_begin_stmt(struct space *space)
+struct txn_stmt *
+txn_begin_stmt(struct txn *txn, struct space *space)
 {
-	struct txn *txn = in_txn();
-	if (txn == NULL) {
-		diag_set(ClientError, ER_NO_TRANSACTION);
-		return NULL;
-	} else if (txn->in_sub_stmt > TXN_SUB_STMT_MAX) {
+	if (txn->in_sub_stmt > TXN_SUB_STMT_MAX) {
 		diag_set(ClientError, ER_SUB_STMT_MAX);
 		return NULL;
 	}
@@ -233,7 +229,7 @@ txn_begin_stmt(struct space *space)
 	if (stmt == NULL)
 		return NULL;
 	if (space == NULL)
-		return txn;
+		return stmt;
 
 	if (trigger_run(&space->on_stmt_begin, txn) != 0)
 		goto fail;
@@ -246,9 +242,9 @@ txn_begin_stmt(struct space *space)
 	if (engine_begin_statement(engine, txn) != 0)
 		goto fail;
 
-	return txn;
+	return stmt;
 fail:
-	txn_rollback_stmt();
+	txn_rollback_stmt(txn);
 	return NULL;
 }
 
@@ -311,8 +307,21 @@ txn_commit_stmt(struct txn *txn, struct request *request)
 	--txn->in_sub_stmt;
 	return 0;
 fail:
-	txn_rollback_stmt();
+	txn_rollback_stmt(txn);
 	return -1;
+}
+
+/*
+ * Callback called if journal write failed.
+ */
+static void
+journal_write_error_cb(struct trigger *trigger, void *event)
+{
+	(void) event;
+	struct txn *txn = (struct txn *)trigger->data;
+	if (txn->engine)
+		engine_rollback(txn->engine, txn);
+	txn->engine = NULL;
 }
 
 static int64_t
@@ -325,6 +334,10 @@ txn_write_to_wal(struct txn *txn)
 						      &txn->region);
 	if (req == NULL)
 		return -1;
+
+	struct trigger on_error;
+	trigger_create(&on_error, journal_write_error_cb, txn, NULL);
+	journal_entry_on_error(req, &on_error);
 
 	struct txn_stmt *stmt;
 	struct xrow_header **remote_row = req->rows;
@@ -348,12 +361,6 @@ txn_write_to_wal(struct txn *txn)
 	if (res < 0) {
 		/* Cascading rollback. */
 		txn_rollback(txn); /* Perform our part of cascading rollback. */
-		/*
-		 * Move fiber to end of event loop to avoid
-		 * execution of any new requests before all
-		 * pending rollbacks are processed.
-		 */
-		fiber_reschedule();
 		diag_set(ClientError, ER_WAL_IO);
 		diag_log();
 	} else if (stop - start > too_long_threshold) {
@@ -429,9 +436,8 @@ fail:
 }
 
 void
-txn_rollback_stmt()
+txn_rollback_stmt(struct txn *txn)
 {
-	struct txn *txn = in_txn();
 	if (txn == NULL || txn->in_sub_stmt == 0)
 		return;
 	txn->in_sub_stmt--;
@@ -449,6 +455,7 @@ txn_rollback(struct txn *txn)
 		unreachable();
 		panic("rollback trigger failed");
 	}
+
 	if (txn->engine)
 		engine_rollback(txn->engine, txn);
 

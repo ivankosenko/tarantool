@@ -178,10 +178,10 @@ box_process_rw(struct request *request, struct space *space,
 	rmean_collect(rmean_box, request->type, 1);
 	if (access_check_space(space, PRIV_W) != 0)
 		goto fail;
-	if (txn_begin_stmt(space) == NULL)
+	if (txn_begin_stmt(txn, space) == NULL)
 		goto fail;
 	if (space_execute_dml(space, txn, request, &tuple) != 0) {
-		txn_rollback_stmt();
+		txn_rollback_stmt(txn);
 		goto fail;
 	}
 	/*
@@ -1087,7 +1087,7 @@ box_select(uint32_t space_id, uint32_t index_id,
 	struct iterator *it = index_create_iterator(index, type,
 						    key, part_count);
 	if (it == NULL) {
-		txn_rollback_stmt();
+		txn_rollback_stmt(txn);
 		return -1;
 	}
 
@@ -1112,7 +1112,7 @@ box_select(uint32_t space_id, uint32_t index_id,
 
 	if (rc != 0) {
 		port_destroy(port);
-		txn_rollback_stmt();
+		txn_rollback_stmt(txn);
 		return -1;
 	}
 	txn_commit_ro_stmt(txn);

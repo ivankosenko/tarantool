@@ -70,6 +70,7 @@ journal_entry_new(size_t n_rows, struct region *region)
 	entry->n_rows = n_rows;
 	entry->res = -1;
 	entry->fiber = fiber();
+	rlist_create(&entry->on_error);
 	return entry;
 }
 
