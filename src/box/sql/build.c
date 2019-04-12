@@ -1004,12 +1004,10 @@ vdbe_emit_fk_constraint_create(struct Parse *parse_context,
 	 * Lets check that constraint with this name hasn't
 	 * been created before.
 	 */
-	const char *error_msg =
-		tt_sprintf(tnt_errcode_desc(ER_CONSTRAINT_EXISTS), name_copy);
 	if (vdbe_emit_halt_with_presence_test(parse_context,
 					      BOX_FK_CONSTRAINT_ID, 0,
 					      constr_tuple_reg, 2,
-					      ER_CONSTRAINT_EXISTS, error_msg,
+					      ER_CONSTRAINT_EXISTS, name_copy,
 					      false, OP_NoConflict) != 0)
 		return;
 	sqlVdbeAddOp2(vdbe, OP_Bool, fk->is_deferred, constr_tuple_reg + 3);
@@ -1392,13 +1390,10 @@ vdbe_emit_fk_constraint_drop(struct Parse *parse_context, char *constraint_name,
 	sqlVdbeAddOp4(vdbe, OP_String8, 0, key_reg, 0, constraint_name,
 			  P4_DYNAMIC);
 	sqlVdbeAddOp2(vdbe, OP_Integer, child_id,  key_reg + 1);
-	const char *error_msg =
-		tt_sprintf(tnt_errcode_desc(ER_NO_SUCH_CONSTRAINT),
-			   constraint_name);
 	if (vdbe_emit_halt_with_presence_test(parse_context,
 					      BOX_FK_CONSTRAINT_ID, 0,
 					      key_reg, 2, ER_NO_SUCH_CONSTRAINT,
-					      error_msg, false,
+					      constraint_name, false,
 					      OP_Found) != 0) {
 		sqlDbFree(parse_context->db, constraint_name);
 		return;

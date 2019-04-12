@@ -100,9 +100,6 @@ sql_trigger_begin(struct Parse *parse)
 		struct Vdbe *v = sqlGetVdbe(parse);
 		if (v != NULL)
 			sqlVdbeCountChanges(v);
-		const char *error_msg =
-			tt_sprintf(tnt_errcode_desc(ER_TRIGGER_EXISTS),
-				   trigger_name);
 		char *name_copy = sqlDbStrDup(db, trigger_name);
 		if (name_copy == NULL)
 			goto trigger_cleanup;
@@ -113,7 +110,8 @@ sql_trigger_begin(struct Parse *parse)
 		if (vdbe_emit_halt_with_presence_test(parse, BOX_TRIGGER_ID, 0,
 						      name_reg, 1,
 						      ER_TRIGGER_EXISTS,
-						      error_msg, (no_err != 0),
+						      trigger_name,
+						      (no_err != 0),
 						      OP_NoConflict) != 0)
 			goto trigger_cleanup;
 	}
@@ -412,9 +410,6 @@ sql_drop_trigger(struct Parse *parser)
 
 	assert(name->nSrc == 1);
 	const char *trigger_name = name->a[0].zName;
-	const char *error_msg =
-		tt_sprintf(tnt_errcode_desc(ER_NO_SUCH_TRIGGER),
-			   trigger_name);
 	char *name_copy = sqlDbStrDup(db, trigger_name);
 	if (name_copy == NULL)
 		goto drop_trigger_cleanup;
@@ -422,7 +417,8 @@ sql_drop_trigger(struct Parse *parser)
 	sqlVdbeAddOp4(v, OP_String8, 0, name_reg, 0, name_copy, P4_DYNAMIC);
 	if (vdbe_emit_halt_with_presence_test(parser, BOX_TRIGGER_ID, 0,
 					      name_reg, 1, ER_NO_SUCH_TRIGGER,
-					      error_msg, no_err, OP_Found) != 0)
+					      trigger_name,
+					      no_err, OP_Found) != 0)
 		goto drop_trigger_cleanup;
 
 	vdbe_code_drop_trigger(parser, trigger_name, true);

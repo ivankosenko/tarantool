@@ -1032,12 +1032,9 @@ case OP_Halt: {
 	p->pc = pcx;
 	if (p->rc) {
 		if (p->rc == SQL_TARANTOOL_ERROR) {
-			if (pOp->p4.z == NULL) {
-				assert(! diag_is_empty(diag_get()));
-			} else {
-				box_error_set(__FILE__, __LINE__, pOp->p5,
-					      pOp->p4.z);
-			}
+			if (pOp->p4.z != NULL)
+				diag_set(ClientError, pOp->p5, pOp->p4.z);
+			assert(! diag_is_empty(diag_get()));
 		} else if (pOp->p5 != 0) {
 			static const char * const azType[] = { "NOT NULL", "UNIQUE", "CHECK",
 							       "FOREIGN KEY" };
