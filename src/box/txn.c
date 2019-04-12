@@ -194,6 +194,7 @@ txn_begin()
 	txn->engine = NULL;
 	txn->engine_tx = NULL;
 	txn->psql_txn = NULL;
+	txn->entry = NULL;
 	/* fiber_on_yield/fiber_on_stop initialized by engine on demand */
 	fiber_set_txn(fiber(), txn);
 	return txn;
@@ -324,20 +325,24 @@ journal_write_error_cb(struct trigger *trigger, void *event)
 	txn->engine = NULL;
 }
 
+/*
+ * Send the txn to a journal.
+ */
 static int64_t
-txn_write_to_wal(struct txn *txn)
+txn_journal_async_write(struct txn *txn)
 {
+	assert(txn->entry == NULL);
 	assert(txn->n_new_rows + txn->n_applier_rows > 0);
 
+	/* Prepare a journal entry. */
 	struct journal_entry *req = journal_entry_new(txn->n_new_rows +
 						      txn->n_applier_rows,
 						      &txn->region);
 	if (req == NULL)
 		return -1;
 
-	struct trigger on_error;
-	trigger_create(&on_error, journal_write_error_cb, txn, NULL);
-	journal_entry_on_error(req, &on_error);
+	trigger_create(&txn->on_error, journal_write_error_cb, txn, NULL);
+	journal_entry_on_error(req, &txn->on_error);
 
 	struct txn_stmt *stmt;
 	struct xrow_header **remote_row = req->rows;
@@ -354,31 +359,34 @@ txn_write_to_wal(struct txn *txn)
 	assert(remote_row == req->rows + txn->n_applier_rows);
 	assert(local_row == remote_row + txn->n_new_rows);
 
-	ev_tstamp start = ev_monotonic_now(loop());
-	int64_t res = journal_write(req);
-	ev_tstamp stop = ev_monotonic_now(loop());
-
-	if (res < 0) {
-		/* Cascading rollback. */
-		txn_rollback(txn); /* Perform our part of cascading rollback. */
+	txn->entry = req;
+	/* Send entry to a journal. */
+	if (journal_async_write(txn->entry) < 0) {
 		diag_set(ClientError, ER_WAL_IO);
-		diag_log();
-	} else if (stop - start > too_long_threshold) {
-		int n_rows = txn->n_new_rows + txn->n_applier_rows;
-		say_warn_ratelimited("too long WAL write: %d rows at "
-				     "LSN %lld: %.3f sec", n_rows,
-				     res - n_rows + 1, stop - start);
+		return -1;
 	}
-	/*
-	 * Use vclock_sum() from WAL writer as transaction signature.
-	 */
-	return res;
+	return 0;
 }
 
-int
-txn_commit(struct txn *txn)
+/*
+ * Wait until journal processing finished.
+ */
+static int64_t
+txn_journal_async_wait(struct txn *txn)
 {
-	assert(txn == in_txn());
+	assert(txn->entry != NULL);
+	txn->signature = journal_async_wait(txn->entry);
+	if (txn->signature < 0)
+		diag_set(ClientError, ER_WAL_IO);
+	return txn->signature;
+}
+
+/*
+ * Prepare a transaction using engines.
+ */
+static int
+txn_prepare(struct txn *txn)
+{
 	/*
 	 * If transaction has been started in SQL, deferred
 	 * foreign key constraints must not be violated.
@@ -388,7 +396,7 @@ txn_commit(struct txn *txn)
 		struct sql_txn *sql_txn = txn->psql_txn;
 		if (sql_txn->fk_deferred_count != 0) {
 			diag_set(ClientError, ER_FOREIGN_KEY_CONSTRAINT);
-			goto fail;
+			return -1;
 		}
 	}
 	/*
@@ -396,15 +404,54 @@ txn_commit(struct txn *txn)
 	 * we have a bunch of IPROTO_NOP statements.
 	 */
 	if (txn->engine != NULL) {
-		if (engine_prepare(txn->engine, txn) != 0)
-			goto fail;
+		if (engine_prepare(txn->engine, txn) != 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+/*
+ * Send a transaction to a journal.
+ */
+int
+txn_async_commit(struct txn *txn)
+{
+	assert(txn == in_txn());
+	if (txn_prepare(txn) != 0)
+		goto fail;
+
+	txn->start_tm = ev_monotonic_now(loop());
+	if (txn->n_new_rows + txn->n_applier_rows == 0)
+		return 0;
+
+	if (txn_journal_async_write(txn) != 0)
+		goto fail;
+
+	return 0;
+fail:
+	txn_rollback(txn);
+	return -1;
+}
+
+/*
+ * Wait until transaction processing was finished.
+ */
+int
+txn_async_wait(struct txn *txn)
+{
+	if (txn->n_new_rows + txn->n_applier_rows > 0 &&
+	    txn_journal_async_wait(txn) < 0)
+		goto fail;
+	ev_tstamp stop_tm = ev_monotonic_now(loop());
+	if (stop_tm - txn->start_tm > too_long_threshold) {
+		int n_rows = txn->n_new_rows + txn->n_applier_rows;
+		say_warn_ratelimited("too long WAL write: %d rows at "
+				     "LSN %lld: %.3f sec", n_rows,
+				     txn->signature - n_rows + 1,
+				     stop_tm - txn->start_tm);
 	}
 
-	if (txn->n_new_rows + txn->n_applier_rows > 0) {
-		txn->signature = txn_write_to_wal(txn);
-		if (txn->signature < 0)
-			return -1;
-	}
 	/*
 	 * The transaction is in the binary log. No action below
 	 * may throw. In case an error has happened, there is
@@ -417,7 +464,7 @@ txn_commit(struct txn *txn)
 		panic("commit trigger failed");
 	}
 	/*
-	 * Engine can be NULL if transaction contains IPROTO_NOP
+	 * Engine can be NULL if the transaction contains IPROTO_NOP
 	 * statements only.
 	 */
 	if (txn->engine != NULL)
@@ -430,9 +477,19 @@ txn_commit(struct txn *txn)
 	fiber_set_txn(fiber(), NULL);
 	txn_free(txn);
 	return 0;
+
 fail:
 	txn_rollback(txn);
 	return -1;
+}
+
+int
+txn_commit(struct txn *txn)
+{
+	if (txn_async_commit(txn) != 0 ||
+	    txn_async_wait(txn) < 0)
+		return -1;
+	return 0;
 }
 
 void

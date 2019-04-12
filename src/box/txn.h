@@ -187,6 +187,16 @@ struct txn {
 	 /** Commit and rollback triggers */
 	struct rlist on_commit, on_rollback;
 	struct sql_txn *psql_txn;
+	/**
+	 * Trigger to call if write failed.
+	 */
+	struct trigger on_error;
+	/**
+	 * Journal entry to control txn write.
+	 */
+	struct journal_entry *entry;
+	/** Timestampt of entry write start. */
+	ev_tstamp start_tm;
 };
 
 /* Pointer to the current transaction (if any) */
