@@ -1031,25 +1031,10 @@ case OP_Halt: {
 	p->errorAction = (u8)pOp->p2;
 	p->pc = pcx;
 	if (p->rc) {
-		if (p->rc == SQL_TARANTOOL_ERROR) {
-			if (pOp->p4.z != NULL)
-				diag_set(ClientError, pOp->p5, pOp->p4.z);
-			assert(! diag_is_empty(diag_get()));
-		} else if (pOp->p5 != 0) {
-			static const char * const azType[] = { "NOT NULL", "UNIQUE", "CHECK",
-							       "FOREIGN KEY" };
-			testcase( pOp->p5==1);
-			testcase( pOp->p5==2);
-			testcase( pOp->p5==3);
-			testcase( pOp->p5==4);
-			sqlVdbeError(p, "%s constraint failed", azType[pOp->p5-1]);
-			if (pOp->p4.z) {
-				p->zErrMsg = sqlMPrintf(db, "%z: %s", p->zErrMsg, pOp->p4.z);
-			}
-		} else {
-			sqlVdbeError(p, "%s", pOp->p4.z);
-		}
-		sql_log(pOp->p1, "abort at %d in [%s]: %s", pcx, p->zSql, p->zErrMsg);
+		assert(p->rc == SQL_TARANTOOL_ERROR);
+		if (pOp->p4.z != NULL)
+			diag_set(ClientError, pOp->p5, pOp->p4.z);
+		assert(! diag_is_empty(diag_get()));
 	}
 	rc = sqlVdbeHalt(p);
 	assert(rc==SQL_BUSY || rc==SQL_OK || rc==SQL_ERROR);

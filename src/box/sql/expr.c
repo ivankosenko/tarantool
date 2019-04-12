@@ -4386,9 +4386,10 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 					  ON_CONFLICT_ACTION_IGNORE, 0,
 					  pExpr->u.zToken, 0);
 		} else {
-			sqlHaltConstraint(pParse, SQL_CONSTRAINT_TRIGGER,
-					      pExpr->on_conflict_action,
-					      pExpr->u.zToken, 0, 0);
+			sqlVdbeAddOp4(v, OP_Halt, SQL_TARANTOOL_ERROR,
+				      pExpr->on_conflict_action, 0,
+				      pExpr->u.zToken, 0);
+			sqlVdbeChangeP5(v, ER_SQL_EXECUTE);
 		}
 		break;
 	}

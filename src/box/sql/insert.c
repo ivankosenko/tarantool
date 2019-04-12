@@ -865,7 +865,6 @@ vdbe_emit_constraint_checks(struct Parse *parse_context, struct space *space,
 			    enum on_conflict_action on_conflict,
 			    int ignore_label, int *upd_cols)
 {
-	struct sql *db = parse_context->db;
 	struct Vdbe *v = sqlGetVdbe(parse_context);
 	assert(v != NULL);
 	bool is_update = upd_cols != NULL;
@@ -895,20 +894,18 @@ vdbe_emit_constraint_checks(struct Parse *parse_context, struct space *space,
 		if (on_conflict_nullable == ON_CONFLICT_ACTION_REPLACE &&
 		    dflt == NULL)
 			on_conflict_nullable = ON_CONFLICT_ACTION_ABORT;
-		char *err_msg;
+		const char *err;
 		int addr;
 		switch (on_conflict_nullable) {
 		case ON_CONFLICT_ACTION_ABORT:
 		case ON_CONFLICT_ACTION_ROLLBACK:
 		case ON_CONFLICT_ACTION_FAIL:
-			err_msg = sqlMPrintf(db, "%s.%s", def->name,
-						 def->fields[i].name);
-			sqlVdbeAddOp3(v, OP_HaltIfNull,
-					  SQL_CONSTRAINT_NOTNULL,
-					  on_conflict_nullable,
-					  new_tuple_reg + i);
-			sqlVdbeAppendP4(v, err_msg, P4_DYNAMIC);
-			sqlVdbeChangeP5(v, P5_ConstraintNotNull);
+			err = tt_sprintf("NOT NULL constraint failed: %s.%s",
+					 def->name, def->fields[i].name);
+			sqlVdbeAddOp4(v, OP_HaltIfNull, SQL_TARANTOOL_ERROR,
+				      on_conflict_nullable, new_tuple_reg + i,
+				      err, P4_STATIC);
+			sqlVdbeChangeP5(v, ER_SQL_EXECUTE);
 			break;
 		case ON_CONFLICT_ACTION_IGNORE:
 			sqlVdbeAddOp2(v, OP_IsNull, new_tuple_reg + i,
@@ -951,11 +948,13 @@ vdbe_emit_constraint_checks(struct Parse *parse_context, struct space *space,
 				char *name = checks->a[i].zName;
 				if (name == NULL)
 					name = def->name;
-				sqlHaltConstraint(parse_context,
-						      SQL_CONSTRAINT_CHECK,
-						      on_conflict_check, name,
-						      P4_TRANSIENT,
-						      P5_ConstraintCheck);
+				const char *err =
+					tt_sprintf("CHECK constraint failed: "\
+						   "%s", name);
+				sqlVdbeAddOp4(v, OP_Halt, SQL_TARANTOOL_ERROR,
+					      on_conflict_check, 0, err,
+					      P4_STATIC);
+				sqlVdbeChangeP5(v, ER_SQL_EXECUTE);
 			}
 			sqlVdbeResolveLabel(v, all_ok);
 		}

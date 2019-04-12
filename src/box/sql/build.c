@@ -2972,26 +2972,6 @@ sql_set_multi_write(struct Parse *parse_context, bool is_set)
 	pToplevel->isMultiWrite |= is_set;
 }
 
-/*
- * Code an OP_Halt that causes the vdbe to return an SQL_CONSTRAINT
- * error. The onError parameter determines which (if any) of the statement
- * and/or current transaction is rolled back.
- */
-void
-sqlHaltConstraint(Parse * pParse,	/* Parsing context */
-		      int errCode,	/* extended error code */
-		      int onError,	/* Constraint type */
-		      char *p4,	/* Error message */
-		      i8 p4type,	/* P4_STATIC or P4_TRANSIENT */
-		      u8 p5Errmsg	/* P5_ErrMsg type */
-    )
-{
-	Vdbe *v = sqlGetVdbe(pParse);
-	assert((errCode & 0xff) == SQL_CONSTRAINT);
-	sqlVdbeAddOp4(v, OP_Halt, errCode, onError, 0, p4, p4type);
-	sqlVdbeChangeP5(v, p5Errmsg);
-}
-
 #ifndef SQL_OMIT_CTE
 /*
  * This routine is invoked once per CTE by the parser while parsing a
