@@ -4237,6 +4237,8 @@ on_replace_ck_constraint_commit(struct trigger *trigger, void *event)
 {
 	struct txn_stmt *stmt = txn_last_stmt((struct txn *) event);
 	struct ck_constraint *ck = (struct ck_constraint *)trigger->data;
+	struct space *space = space_by_id(ck->space_id);
+	trigger_run_xc(&on_alter_space, space);
 	if (stmt->old_tuple != NULL)
 		ck_constraint_delete(ck);
 }
