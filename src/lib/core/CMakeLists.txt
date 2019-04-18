@@ -26,6 +26,7 @@ set(core_sources
     trigger.cc
     mpstream.c
     port.c
+    coio_popen.c
 )
 
 if (TARGET_OS_NETBSD)

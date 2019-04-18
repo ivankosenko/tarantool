@@ -494,8 +494,8 @@ struct cord {
 extern __thread struct cord *cord_ptr;
 
 #define cord() cord_ptr
-#define fiber() cord()->fiber
-#define loop() (cord()->loop)
+#define fiber() (cord() ? cord()->fiber : NULL)
+#define loop() (cord() ? cord()->loop : NULL)
 
 void
 cord_create(struct cord *cord, const char *name);

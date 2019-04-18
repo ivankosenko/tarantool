@@ -1741,7 +1741,24 @@ static int eio_threads;
 static void ecb_cold
 eio_prefork()
 {
-    eio_threads = etp_set_max_parallel(EIO_POOL, 0);
+	/*
+	 * When fork() is called libeio shuts
+	 * down all working threads.
+	 * But it causes a deadlock if fork() was
+	 * called from the libeio thread.
+	 * To avoid this do not close the
+	 * thread who called fork().
+	 * This behaviour is acceptable for the
+	 * case when fork() is immediately followed
+	 * by exec().
+	 * To clone a process call fork() from the
+	 * main thread.
+	 */
+
+	if (etp_is_in_pool_thread())
+		eio_threads = etp_get_max_parallel(EIO_POOL);
+	else
+    		eio_threads = etp_set_max_parallel(EIO_POOL, 0);
 }
 
 static void ecb_cold

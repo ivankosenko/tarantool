@@ -84,6 +84,19 @@ int	coio_tempdir(char *path, size_t path_len);
 
 int	coio_readdir(const char *path, char **buf);
 int	coio_copyfile(const char *source, const char *dest);
+
+void *
+coio_popen(const char *command, const char *type);
+
+int
+coio_pclose(void *fd);
+
+ssize_t
+coio_popen_read(void *fh, void *buf, size_t count, int *output_number);
+
+ssize_t
+coio_popen_write(void *fh, const void *buf, size_t count);
+
 #if defined(__cplusplus)
 } /* extern "C" */
 #endif /* defined(__cplusplus) */

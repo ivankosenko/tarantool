@@ -206,6 +206,86 @@ fio.open = function(path, flags, mode)
     return fh
 end
 
+local popen_methods = {}
+
+-- read stdout & stderr of the process started by fio.popen
+-- read() -> str, source
+-- read(buf) -> len, source
+-- read(size) -> str, source
+-- read(buf, size) -> len, source
+-- source contains id of the stream,
+-- 1 - for stdout, 2 - for stderr, 0 - in a case of error
+popen_methods.read = function(self, buf, size)
+    local tmpbuf
+    if (not ffi.istype(const_char_ptr_t, buf) and buf == nil) or
+            (ffi.istype(const_char_ptr_t, buf) and size == nil) then
+        size = 512
+    end
+    if not ffi.istype(const_char_ptr_t, buf) then
+        size = buf or size
+        tmpbuf = buffer.ibuf()
+        buf = tmpbuf:reserve(size)
+    end
+    local res, output_no, err = internal.popen_read(self.fh, buf, size)
+    if res == nil then
+        if tmpbuf ~= nil then
+            tmpbuf:recycle()
+        end
+        return nil, output_no, err
+    end
+    if tmpbuf ~= nil then
+        tmpbuf:alloc(res)
+        res = ffi.string(tmpbuf.rpos, tmpbuf:size())
+        tmpbuf:recycle()
+    end
+    return res, output_no
+end
+
+-- write(str)
+-- write(buf, len)
+popen_methods.write = function(self, data, len)
+    if not ffi.istype(const_char_ptr_t, data) then
+        data = tostring(data)
+        len = #data
+    end
+    local res, err = internal.popen_write(self.fh, data, len)
+    if err ~= nil then
+        return false, err
+    end
+    return res >= 0
+end
+
+popen_methods.close = function(self)
+    local res, err = internal.pclose(self.fh)
+    self.fh = -1
+    if err ~= nil then
+        return false, err
+    end
+    return res
+end
+
+
+local popen_mt = { __index = popen_methods }
+
+fio.popen = function(command, mode)
+    if type(command) ~= 'string' then
+        error("Usage: fio.popen(command, mode)")
+    end
+
+    if type(mode) ~= 'string' then
+        mode = 'r'  -- use default read-mode
+    end
+
+    local fh,err = internal.popen(tostring(command), tostring(mode))
+    if err ~= nil then
+        return nil, err
+    end
+
+    fh = {fh = fh}
+    setmetatable(fh, popen_mt)
+    return fh
+end
+
 fio.pathjoin = function(...)
     local i, path = 1, nil
 

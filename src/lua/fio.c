@@ -703,7 +703,89 @@ lbox_fio_copyfile(struct lua_State *L)
 	return lbox_fio_pushbool(L, coio_copyfile(source, dest) == 0);
 }
 
+static int
+lbox_fio_popen(struct lua_State *L)
+{
+	if (lua_gettop(L) < 1) {
+		usage:
+		luaL_error(L, "Usage: fio.popen(command, type)");
+	}
 
+	/*
+	 * FILE *popen(const char *command, const char *type);
+	 */
+	const char *command = lua_tostring(L, 1);
+	if (command == NULL)
+		goto usage;
+
+	const char *type = lua_tostring(L, 2);
+	if (type == NULL)
+		type = "r";
+
+	void* fh = coio_popen(command, type);
+	if (fh == NULL) {
+		lua_pushnil(L);
+		lbox_fio_pushsyserror(L);
+		return 2;
+	}
+	lua_pushlightuserdata(L, fh);
+	return 1;
+}
+
+static int
+lbox_fio_pclose(struct lua_State *L)
+{
+	void* fd = lua_touserdata(L, 1);
+	return lbox_fio_pushbool(L, coio_pclose(fd) == 0);
+}
+
+static int
+lbox_fio_popen_read(struct lua_State *L)
+{
+	void* fh = lua_touserdata(L, 1);
+	uint32_t ctypeid;
+	char *buf = *(char **)luaL_checkcdata(L, 2, &ctypeid);
+	size_t len = lua_tonumber(L, 3);
+
+	if (!len) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	int output_number = 0;
+	int res = coio_popen_read(fh, buf, len, &output_number);
+
+	if (res < 0) {
+		lua_pushnil(L);
+		lua_pushinteger(L, 0);
+		lbox_fio_pushsyserror(L);
+		return 3;
+	}
+
+	lua_pushinteger(L, res);
+	lua_pushinteger(L, output_number);
+	return 2;
+}
+
+static int
+lbox_fio_popen_write(struct lua_State *L)
+{
+	void* fh = lua_touserdata(L, 1);
+	const char *buf = lua_tostring(L, 2);
+	uint32_t ctypeid = 0;
+	if (buf == NULL)
+		buf = *(const char **)luaL_checkcdata(L, 2, &ctypeid);
+	size_t len = lua_tonumber(L, 3);
+
+	int res = coio_popen_write(fh, buf, len);
+	if (res < 0) {
+		lua_pushnil(L);
+		lbox_fio_pushsyserror(L);
+		return 2;
+	}
+	lua_pushinteger(L, res);
+	return 1;
+}
 
 void
 tarantool_lua_fio_init(struct lua_State *L)
@@ -747,6 +829,10 @@ tarantool_lua_fio_init(struct lua_State *L)
 		{ "listdir",		lbox_fio_listdir		},
 		{ "fstat",		lbox_fio_fstat			},
 		{ "copyfile",		lbox_fio_copyfile,		},
+		{ "popen",		lbox_fio_popen			},
+		{ "pclose",		lbox_fio_pclose 		},
+		{ "popen_read",		lbox_fio_popen_read 		},
+		{ "popen_write",	lbox_fio_popen_write 		},
 		{ NULL,			NULL				}
 	};
 	luaL_register(L, NULL, internal_methods);

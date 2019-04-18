@@ -34,6 +34,7 @@
 #include "say.h"
 #include "fio.h"
 #include "errinj.h"
+#include "coio_popen.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -103,6 +104,31 @@ struct coio_file_task {
 			const char *source;
 			const char *dest;
 		} copyfile;
+
+		struct {
+			const char *command;
+			const char *type;
+			void *handle;
+		} popen_params;
+
+		struct {
+			void *handle;
+		} pclose_params;
+
+		struct {
+			void *handle;
+			const void* buf;
+			size_t count;
+			size_t *written;
+		} popen_write;
+
+		struct {
+			void *handle;
+			void *buf;
+			size_t count;
+			size_t *read_bytes;
+			int *output_number;
+		} popen_read;
 	};
 };
 
@@ -630,4 +656,167 @@ coio_copyfile(const char *source, const char *dest)
 	eio.copyfile.dest = dest;
 	eio_req *req = eio_custom(coio_do_copyfile, 0, coio_complete, &eio);
 	return coio_wait_done(req, &eio);
+}
+
+static void
+coio_do_popen(eio_req *req)
+{
+	struct coio_file_task *eio = (struct coio_file_task *)req->data;
+	eio->popen_params.handle = coio_popen_impl(eio->popen_params.command,
+						   eio->popen_params.type);
+	eio->result = 0;
+	eio->errorno = errno;
+}
+
+void *
+coio_popen(const char *command, const char *type)
+{
+	INIT_COEIO_FILE(eio);
+	eio.popen_params.command = command;
+	eio.popen_params.type = type;
+
+	eio_req *req = eio_custom(coio_do_popen, 0,
+				  coio_complete, &eio);
+	coio_wait_done(req, &eio);
+	return eio.popen_params.handle;
+}
+
+static void
+coio_do_pclose(eio_req *req)
+{
+	struct coio_file_task *eio = (struct coio_file_task *)req->data;
+	req->result = coio_try_pclose_impl(eio->pclose_params.handle);
+	req->errorno = errno;
+}
+
+static int
+coio_do_nonblock_pclose(void *fh)
+{
+	INIT_COEIO_FILE(eio);
+	eio.pclose_params.handle = fh;
+	eio_req *req = eio_custom(coio_do_pclose, 0,
+				  coio_complete, &eio);
+	return coio_wait_done(req, &eio);
+}
+
+int
+coio_pclose(void *fh)
+{
+	int rc = coio_try_pclose_impl(fh);
+	if (rc == 0)		/* The child process is dead */
+		return 0;
+	else if (rc == -1)	/* Failed */
+		return -1;
+
+	assert(rc == -2); 	/* A blocking operation is expected */
+
+	do {
+		rc = coio_do_nonblock_pclose(fh);
+	} while (rc == -2);
+
+	return rc;
+}
+
+static void
+coio_do_popen_read(eio_req *req)
+{
+	struct coio_file_task *eio = (struct coio_file_task *)req->data;
+
+	int rc = coio_popen_try_to_read(eio->popen_read.handle,
+					eio->popen_read.buf,
+					eio->popen_read.count,
+					eio->popen_read.read_bytes,
+					eio->popen_read.output_number);
+
+	req->result = rc;
+	req->errorno = errno;
+}
+
+static int
+coio_do_nonblock_popen_read(void *fh, void *buf, size_t count,
+	size_t *read_bytes, int *source_id)
+{
+	INIT_COEIO_FILE(eio);
+	eio.popen_read.buf = buf;
+	eio.popen_read.count = count;
+	eio.popen_read.handle = fh;
+	eio.popen_read.read_bytes = read_bytes;
+	eio.popen_read.output_number = source_id;
+	eio_req *req = eio_custom(coio_do_popen_read, 0,
+				  coio_complete, &eio);
+	return coio_wait_done(req, &eio);
+}
+
+ssize_t
+coio_popen_read(void *fh, void *buf, size_t count, int *output_number)
+{
+	size_t received = 0;
+	int rc = coio_popen_try_to_read(fh, buf, count,
+		&received, output_number);
+	if (rc == 0)		/* The reading's succeeded */
+		return (ssize_t)received;
+	else if (rc == -1)	/* Failed */
+		return -1;
+
+	assert(rc == -2); 	/* A blocking operation is expected */
+
+	do {
+		rc = coio_do_nonblock_popen_read(fh, buf, count,
+			&received, output_number);
+	} while (rc == -2);
+
+	return (rc == 0) ? (ssize_t)received
+			 : -1;
+}
+
+static void
+coio_do_popen_write(eio_req *req)
+{
+	struct coio_file_task *eio = (struct coio_file_task *)req->data;
+
+	int rc = coio_popen_try_to_write(eio->popen_write.handle,
+					eio->popen_write.buf,
+					eio->popen_write.count,
+					eio->popen_write.written);
+
+	req->result = rc;
+	req->errorno = errno;
+}
+
+static int
+coio_do_nonblock_popen_write(void *fh, const void *buf, size_t count,
+	size_t *written)
+{
+	INIT_COEIO_FILE(eio);
+	eio.popen_write.buf = buf;
+	eio.popen_write.count = count;
+	eio.popen_write.handle = fh;
+	eio.popen_write.written = written;
+	eio_req *req = eio_custom(coio_do_popen_write, 0,
+				  coio_complete, &eio);
+	return coio_wait_done(req, &eio);
+}
+
+ssize_t
+coio_popen_write(void *fh, const void *buf, size_t count)
+{
+	size_t written = 0;
+	int rc = coio_popen_try_to_write(fh, buf, count,
+					&written);
+	if (rc == 0)		/* The writing's succeeded */
+		return (ssize_t)written;
+	else if (rc == -1)	/* Failed */
+		return -1;
+
+	assert(rc == -2); 	/* A blocking operation is expected */
+
+	do {
+		buf += written;		/* advance writing position */
+		count -= written;
+		rc = coio_do_nonblock_popen_write(fh, buf, count,
+						  &written);
+	} while (rc == -2);
+
+	return (rc == 0) ? (ssize_t)written
+			 : -1;
 }

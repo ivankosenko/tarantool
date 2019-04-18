@@ -4214,6 +4214,8 @@ noinline
 void
 ev_signal_stop (EV_P_ ev_signal *w) EV_THROW
 {
+	if (!loop)
+		return;
   clear_pending (EV_A_ (W)w);
   if (expect_false (!ev_is_active (w)))
     return;

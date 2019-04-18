@@ -164,6 +164,21 @@ struct etp_pool_user
    xmutex_t lock;
 };
 
+static __thread int is_eio_thread = 0;
+
+/**
+ * Check whether the current thread belongs to
+ * libeio thread pool or just a generic thread.
+ *
+ * @return 0 for generic thread
+ * @return 1 for libeio thread pool
+ **/
+ETP_API_DECL int ecb_cold
+etp_is_in_pool_thread()
+{
+	return is_eio_thread;
+}
+
 /* worker threads management */
 
 static void ecb_cold
@@ -321,6 +336,9 @@ X_THREAD_PROC (etp_proc)
   etp_worker self = {};
   self.pool = pool;
   etp_pool_user user; /* per request */
+
+/* Distinguish libeio threads from the generic threads */
+  is_eio_thread = 1;
 
   etp_proc_init ();
 
@@ -615,4 +633,14 @@ etp_set_max_parallel (etp_pool pool, unsigned int threads)
     }
   X_UNLOCK (pool->lock);
   return retval;
+}
+
+ETP_API_DECL int ecb_cold
+etp_get_max_parallel (etp_pool pool)
+{
+	int retval;
+	X_LOCK   (pool->lock);
+	retval = pool->wanted;
+	X_UNLOCK (pool->lock);
+	return retval;
 }
