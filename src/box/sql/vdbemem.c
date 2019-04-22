@@ -315,8 +315,7 @@ sqlVdbeMemStringify(Mem * pMem, u8 bForce)
  * This routine calls the finalize method for that function.  The
  * result of the aggregate is stored back into pMem.
  *
- * Return SQL_ERROR if the finalizer reports an error.  SQL_OK
- * otherwise.
+ * Return -1 if the finalizer reports an error. 0 otherwise.
  */
 int
 sqlVdbeMemFinalize(Mem * pMem, FuncDef * pFunc)
@@ -337,9 +336,10 @@ sqlVdbeMemFinalize(Mem * pMem, FuncDef * pFunc)
 		if (pMem->szMalloc > 0)
 			sqlDbFree(pMem->db, pMem->zMalloc);
 		memcpy(pMem, &t, sizeof(t));
-		return ctx.is_aborted ? SQL_TARANTOOL_ERROR : SQL_OK;
+		if (ctx.is_aborted)
+			return -1;
 	}
-	return SQL_OK;
+	return 0;
 }
 
 /*
