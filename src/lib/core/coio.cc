@@ -689,7 +689,6 @@ coio_waitpid(pid_t pid)
 	fiber_set_cancellable(allow_cancel);
 	ev_child_stop(loop(), &cw);
 	int status = cw.rstatus;
-	fiber_testcancel();
 	return status;
 }
 

@@ -173,18 +173,6 @@ coio_stat_init(ev_stat *stat, const char *path);
 void
 coio_stat_stat_timeout(ev_stat *stat, ev_tstamp delay);
 
-/**
- * Wait for a child to end.
- * @note this is a cancellation point (can throw
- * FiberIsCancelled).
- *
- * @retval exit status of the child.
- *
- * This call only works in the main thread.
- */
-int
-coio_waitpid(pid_t pid);
-
 extern "C" {
 #endif /* defined(__cplusplus) */
 
@@ -209,6 +197,16 @@ enum {
  */
 API_EXPORT int
 coio_wait(int fd, int event, double timeout);
+
+/**
+ * Wait for a child to end.
+ *
+ * @retval exit status of the child.
+ *
+ * This call only works in the main thread.
+ */
+int
+coio_waitpid(pid_t pid);
 
 /**
  * Close the fd and wake any fiber blocked in

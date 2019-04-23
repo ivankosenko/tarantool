@@ -47,6 +47,8 @@
 #include "lua/utils.h"
 #include "coio_file.h"
 
+#include "coio.h"
+
 static inline void
 lbox_fio_pushsyserror(struct lua_State *L)
 {
@@ -703,7 +705,171 @@ lbox_fio_copyfile(struct lua_State *L)
 	return lbox_fio_pushbool(L, coio_copyfile(source, dest) == 0);
 }
 
+static const char *popen_meta_name = "popen_meta";
 
+struct popen_handle {
+	int pid;
+	int in;
+	int out;
+	int err;
+};
+
+
+/*
+ * Start a process and attach to it's io streams.
+ */
+static int
+lbox_fio_popen(struct lua_State *L)
+{
+	const char *exec = lua_tostring(L, -1);
+	int pipein[2], pipeout[2], pipeerr[2];
+	if (pipe(pipein) != 0 || fcntl(pipein[1], F_SETFL,
+				       O_NONBLOCK | O_CLOEXEC) != 0) {
+		lua_pushnil(L);
+		lbox_fio_pushsyserror(L);
+		return 2;
+	}
+	if (pipe(pipeout) != 0 || fcntl(pipeout[0], F_SETFL,
+					O_NONBLOCK | O_CLOEXEC) != 0) {
+		lua_pushnil(L);
+		lbox_fio_pushsyserror(L);
+		return 2;
+	}
+	if (pipe(pipeerr) != 0 || fcntl(pipeerr[0], F_SETFL,
+					O_NONBLOCK | O_CLOEXEC) != 0) {
+		lua_pushnil(L);
+		lbox_fio_pushsyserror(L);
+		return 2;
+	}
+	struct popen_handle *popen_handle = (struct popen_handle *)
+			lua_newuserdata(L, sizeof(struct popen_handle));
+	if (popen_handle == NULL) {
+		//close all
+		return luaL_error(L, "lua_newuserdata failed: popen_handle");
+	}
+
+	popen_handle->pid = fork();
+	if (popen_handle->pid == 0) {
+		dup2(pipein[0], STDIN_FILENO);
+		close(pipein[0]);
+		dup2(pipeout[1], STDOUT_FILENO);
+		close(pipeout[1]);
+		dup2(pipeerr[1], STDERR_FILENO);
+		close(pipeerr[1]);
+		execl(exec, exec, NULL);
+		exit(-1);
+	}
+
+	popen_handle->in = pipein[1];
+	popen_handle->out = pipeout[0];
+	popen_handle->err = pipeerr[0];
+
+	luaL_getmetatable(L, popen_meta_name);
+	lua_setmetatable(L, -2);
+
+	return 1;
+}
+
+/*
+ * Callback to wakeup process.
+ */
+static void
+popen_wait_cb(struct ev_loop *loop, ev_io *watcher, int revents)
+{
+	(void) loop;
+	(void) revents;
+	struct fiber *fiber = (struct fiber *) watcher->data;
+	fiber_wakeup(fiber);
+}
+/*
+ * Read from popened process: both stdout and stderr are polled.
+ */
+static int
+lbox_popen_read(struct lua_State *L)
+{
+	struct popen_handle *popen_handle =
+			luaL_checkudata(L, 1, popen_meta_name);
+	do {
+		static char data[4096];
+		ssize_t rc = read(popen_handle->out, data, sizeof(data));
+		if (rc >= 0) {
+			lua_pushlstring(L, data, rc);
+			return 1;
+		}
+		if (errno == EINTR)
+			continue;
+		if (errno != EAGAIN && errno != EWOULDBLOCK)
+			break;
+		rc = read(popen_handle->err, data, sizeof(data));
+		if (rc >= 0) {
+			lua_pushlstring(L, data, rc);
+			return 1;
+		}
+		if (errno == EINTR)
+			continue;
+		if (errno != EAGAIN && errno != EWOULDBLOCK)
+			break;
+		/* Wait on both out and error handles. */
+		struct ev_io io[2];
+		ev_io_init(&io[0], popen_wait_cb, popen_handle->out, COIO_READ);
+		io[0].data = fiber();
+		ev_io_start(loop(), &io[0]);
+		ev_io_init(&io[1], popen_wait_cb, popen_handle->err, COIO_READ);
+		io[1].data = fiber();
+		ev_io_start(loop(), &io[1]);
+		say_error("WAIT");
+		fiber_yield();
+		say_error("WAITED");
+
+		ev_io_stop(loop(), &io[0]);
+		ev_io_stop(loop(), &io[1]);
+	} while (errno == EINTR);
+	lua_pushnil(L);
+	lbox_fio_pushsyserror(L);
+	return 2;
+}
+
+/*
+ * Write data to popened process.
+ */
+static int
+lbox_popen_write(struct lua_State *L)
+{
+	struct popen_handle *popen_handle =
+			luaL_checkudata(L, 1, popen_meta_name);
+	size_t size;
+	const char *data = lua_tolstring(L, 2, &size);
+	while (size > 0) {
+		ssize_t rc = write(popen_handle->in, data, size);
+		if (rc >= 0) {
+			size -= (size_t) rc;
+			data = (char *) data + rc;
+			continue;
+		}
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			coio_wait(popen_handle->in, COIO_WRITE, TIMEOUT_INFINITY);
+		} else if (errno != EINTR) {
+			lua_pushnil(L);
+			lbox_fio_pushsyserror(L);
+			return 2;
+		}
+	}
+	lua_pushboolean(L, true);
+	return 1;
+}
+
+static int
+lbox_popen_close(struct lua_State *L)
+{
+	struct popen_handle *popen_handle =
+			luaL_checkudata(L, 1, popen_meta_name);
+	close(popen_handle->in);
+	close(popen_handle->out);
+	close(popen_handle->err);
+	kill(popen_handle->pid, SIGTERM);
+	coio_waitpid(popen_handle->pid);
+	return 0;
+}
 
 void
 tarantool_lua_fio_init(struct lua_State *L)
@@ -725,6 +891,7 @@ tarantool_lua_fio_init(struct lua_State *L)
 		{ "tempdir",		lbox_fio_tempdir		},
 		{ "cwd",		lbox_fio_cwd			},
 		{ "sync",		lbox_fio_sync			},
+		{ "popen",		lbox_fio_popen			},
 		{ NULL,			NULL				}
 	};
 
@@ -752,6 +919,14 @@ tarantool_lua_fio_init(struct lua_State *L)
 	luaL_register(L, NULL, internal_methods);
 	lua_settable(L, -3);
 
+	/* metatable for tables *popen */
+	static const struct luaL_Reg popen_methods[] = {
+		{ "write",	lbox_popen_write },
+		{ "read",	lbox_popen_read },
+		{ "close",	lbox_popen_close },
+		{ NULL,		NULL}
+	};
+	luaL_register_type(L, popen_meta_name, popen_methods);
 
 	lua_pushliteral(L, "c");
 	lua_newtable(L);
