@@ -1258,20 +1258,6 @@ sqlMulInt64(i64 * pA, i64 iB)
 }
 
 /*
- * Compute the absolute value of a 32-bit signed integer, of possible.  Or
- * if the integer has a value of -2147483648, return +2147483647
- */
-int
-sqlAbsInt32(int x)
-{
-	if (x >= 0)
-		return x;
-	if (x == (int)0x80000000)
-		return 0x7fffffff;
-	return -x;
-}
-
-/*
  * Find (an approximate) sum of two LogEst values.  This computation is
  * not a simple "+" operator because LogEst is stored as a logarithmic
  * value.

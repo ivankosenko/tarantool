@@ -2978,11 +2978,6 @@ void *sqlDbRealloc(sql *, void *, u64);
 void sqlDbFree(sql *, void *);
 int sqlMallocSize(void *);
 int sqlDbMallocSize(sql *, void *);
-void *sqlScratchMalloc(int);
-void sqlScratchFree(void *);
-void *sqlPageMalloc(int);
-void sqlPageFree(void *);
-void sqlMemSetDefault(void);
 void sqlBenignMallocHooks(void (*)(void), void (*)(void));
 int sqlHeapNearlyFull(void);
 
@@ -3111,9 +3106,6 @@ void sqlReleaseTempReg(Parse *, int);
 int sqlGetTempRange(Parse *, int);
 void sqlReleaseTempRange(Parse *, int, int);
 void sqlClearTempRegCache(Parse *);
-#ifdef SQL_DEBUG
-int sqlNoTempsInRange(Parse *, int, int);
-#endif
 
 /**
  * Construct a new expression. Memory for this node and for the
@@ -3577,7 +3569,6 @@ void sqlExprCacheRemove(Parse *, int, int);
 void sqlExprCacheClear(Parse *);
 void sql_expr_type_cache_change(Parse *, int, int);
 void sqlExprCode(Parse *, Expr *, int);
-void sqlExprCodeCopy(Parse *, Expr *, int);
 void sqlExprCodeFactorable(Parse *, Expr *, int);
 void sqlExprCodeAtInit(Parse *, Expr *, int, u8);
 int sqlExprCodeTemp(Parse *, Expr *, int *);
@@ -3622,8 +3613,6 @@ void sqlExprAnalyzeAggregates(NameContext *, Expr *);
 void sqlExprAnalyzeAggList(NameContext *, ExprList *);
 int sqlFunctionUsesThisSrc(Expr *, SrcList *);
 Vdbe *sqlGetVdbe(Parse *);
-void sqlPrngSaveState(void);
-void sqlPrngRestoreState(void);
 void sqlRollbackAll(Vdbe *);
 
 /**
@@ -4423,7 +4412,6 @@ void sqlVdbeSetChanges(sql *, int);
 int sqlAddInt64(i64 *, i64);
 int sqlSubInt64(i64 *, i64);
 int sqlMulInt64(i64 *, i64);
-int sqlAbsInt32(int);
 u8 sqlGetBoolean(const char *z, u8);
 
 const void *sqlValueText(sql_value *);

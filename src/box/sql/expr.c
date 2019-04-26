@@ -3062,18 +3062,6 @@ sqlExprCodeIN(Parse * pParse,	/* Parsing and code generating context */
 
 	assert(pParse->is_aborted || nVector == 1 || eType == IN_INDEX_EPH
 	       || eType == IN_INDEX_INDEX_ASC || eType == IN_INDEX_INDEX_DESC);
-#ifdef SQL_DEBUG
-	/* Confirm that aiMap[] contains nVector integer values between 0 and
-	 * nVector-1.
-	 */
-	/*
-	   for(i=0; i<nVector; i++){
-	   int j, cnt;
-	   for(cnt=j=0; j<nVector; j++) if( aiMap[j]==i ) cnt++;
-	   assert( cnt==1 );
-	   }
-	 */
-#endif
 
 	/* Code the LHS, the <expr> from "<expr> IN (...)". If the LHS is a
 	 * vector, then it is stored in an array of nVector registers starting
@@ -3088,17 +3076,6 @@ sqlExprCodeIN(Parse * pParse,	/* Parsing and code generating context */
 	rLhsOrig = exprCodeVector(pParse, pLeft, &iDummy);
 	/* Tarantoool: Order is always preserved.  */
 	rLhs = rLhsOrig;
-	/* for(i=0; i<nVector && aiMap[i]==i; i++){} /\* Are LHS fields reordered? *\/ */
-	/* if( i==nVector ){ */
-	/*   /\* LHS fields are not reordered *\/ */
-	/*   rLhs = rLhsOrig; */
-	/* }else{ */
-	/*   /\* Need to reorder the LHS fields according to aiMap *\/ */
-	/*   rLhs = sqlGetTempRange(pParse, nVector); */
-	/*   for(i=0; i<nVector; i++){ */
-	/*     sqlVdbeAddOp3(v, OP_Copy, rLhsOrig+i, rLhs+aiMap[i], 0); */
-	/*   } */
-	/* } */
 
 	/* If sqlFindInIndex() did not find or create an index that is
 	 * suitable for evaluating the IN operator, then evaluate using a
@@ -4496,21 +4473,6 @@ sqlExprCode(Parse * pParse, Expr * pExpr, int target)
 }
 
 /*
- * Make a transient copy of expression pExpr and then code it using
- * sqlExprCode().  This routine works just like sqlExprCode()
- * except that the input expression is guaranteed to be unchanged.
- */
-void
-sqlExprCodeCopy(Parse * pParse, Expr * pExpr, int target)
-{
-	sql *db = pParse->db;
-	pExpr = sqlExprDup(db, pExpr, 0);
-	if (!db->mallocFailed)
-		sqlExprCode(pParse, pExpr, target);
-	sql_expr_delete(db, pExpr, false);
-}
-
-/*
  * Generate code that will evaluate expression pExpr and store the
  * results in register target.  The results are guaranteed to appear
  * in register target.  If the expression is constant, then this routine
@@ -5623,27 +5585,3 @@ sqlClearTempRegCache(Parse * pParse)
 	pParse->nRangeReg = 0;
 }
 
-/*
- * Validate that no temporary register falls within the range of
- * iFirst..iLast, inclusive.  This routine is only call from within assert()
- * statements.
- */
-#ifdef SQL_DEBUG
-int
-sqlNoTempsInRange(Parse * pParse, int iFirst, int iLast)
-{
-	int i;
-	if (pParse->nRangeReg > 0
-	    && pParse->iRangeReg + pParse->nRangeReg < iLast
-	    && pParse->iRangeReg >= iFirst) {
-		return 0;
-	}
-	for (i = 0; i < pParse->nTempReg; i++) {
-		if (pParse->aTempReg[i] >= iFirst
-		    && pParse->aTempReg[i] <= iLast) {
-			return 0;
-		}
-	}
-	return 1;
-}
-#endif				/* SQL_DEBUG */
