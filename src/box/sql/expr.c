@@ -3603,7 +3603,7 @@ sqlExprCodeMove(Parse * pParse, int iFrom, int iTo, int nReg)
 	sqlExprCacheRemove(pParse, iFrom, nReg);
 }
 
-#if defined(SQL_DEBUG) || defined(SQL_COVERAGE_TEST)
+#if defined(SQL_DEBUG)
 /*
  * Return true if any register in the range iFrom..iTo (inclusive)
  * is used as part of the column cache.
@@ -3623,7 +3623,7 @@ usedAsColumnCache(Parse * pParse, int iFrom, int iTo)
 	}
 	return 0;
 }
-#endif				/* SQL_DEBUG || SQL_COVERAGE_TEST */
+#endif				/* SQL_DEBUG */
 
 /*
  * Convert a scalar expression node to a TK_REGISTER referencing

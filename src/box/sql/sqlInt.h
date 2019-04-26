@@ -228,19 +228,14 @@
  * can insure that all cases are evaluated.
  *
  */
-#ifdef SQL_COVERAGE_TEST
-void sqlCoverage(int);
-#define testcase(X)  if( X ){ sqlCoverage(__LINE__); }
-#else
 #define testcase(X)
-#endif
 
 /*
  * The TESTONLY macro is used to enclose variable declarations or
  * other bits of code that are needed to support the arguments
  * within testcase() and assert() macros.
  */
-#if !defined(NDEBUG) || defined(SQL_COVERAGE_TEST)
+#if !defined(NDEBUG)
 #define TESTONLY(X)  X
 #else
 #define TESTONLY(X)
@@ -270,15 +265,8 @@ void sqlCoverage(int);
  * hint of unplanned behavior.
  *
  * In other words, ALWAYS and NEVER are added for defensive code.
- *
- * When doing coverage testing ALWAYS and NEVER are hard-coded to
- * be true and false so that the unreachable code they specify will
- * not be counted as untested code.
  */
-#if defined(SQL_COVERAGE_TEST) || defined(SQL_MUTATION_TEST)
-#define ALWAYS(X)      (1)
-#define NEVER(X)       (0)
-#elif !defined(NDEBUG)
+#if !defined(NDEBUG)
 #define ALWAYS(X)      ((X)?1:(assert(0),0))
 #define NEVER(X)       ((X)?(assert(0),1):0)
 #else
@@ -1162,41 +1150,6 @@ typedef u64 uptr;
  * contained within the buffer S.
  */
 #define SQL_WITHIN(P,S,E) (((uptr)(P)>=(uptr)(S))&&((uptr)(P)<(uptr)(E)))
-
-/*
- * Macros to determine whether the machine is big or little endian,
- * and whether or not that determination is run-time or compile-time.
- *
- * For best performance, an attempt is made to guess at the byte-order
- * using C-preprocessor macros.  If that is unsuccessful, or if
- * -Dsql_RUNTIME_BYTEORDER=1 is set, then byte-order is determined
- * at run-time.
- */
-#if (defined(i386)     || defined(__i386__)   || defined(_M_IX86) ||    \
-     defined(__x86_64) || defined(__x86_64__) || defined(_M_X64)  ||    \
-     defined(_M_AMD64) || defined(_M_ARM)     || defined(__x86)   ||    \
-     defined(__arm__)) && !defined(SQL_RUNTIME_BYTEORDER)
-#define SQL_BYTEORDER    1234
-#define SQL_BIGENDIAN    0
-#define SQL_LITTLEENDIAN 1
-#endif
-#if (defined(sparc)    || defined(__ppc__))  \
-    && !defined(SQL_RUNTIME_BYTEORDER)
-#define SQL_BYTEORDER    4321
-#define SQL_BIGENDIAN    1
-#define SQL_LITTLEENDIAN 0
-#endif
-#if !defined(SQL_BYTEORDER)
-#ifdef SQL_AMALGAMATION
-const int sqlone = 1;
-#else
-extern const int sqlone;
-#endif
-#define SQL_BYTEORDER    0	/* 0 means "unknown at compile-time" */
-#define SQL_BIGENDIAN    (*(char *)(&sqlone)==0)
-#define SQL_LITTLEENDIAN (*(char *)(&sqlone)==1)
-#define SQL_UTF16NATIVE  (SQL_BIGENDIAN?SQL_UTF16BE:SQL_UTF16LE)
-#endif
 
 /*
  * Constants for the largest and smallest possible 64-bit signed integers.
@@ -2910,9 +2863,7 @@ struct sqlConfig {
 	void (*xVdbeBranch) (void *, int iSrcLine, u8 eThis, u8 eMx);	/* Callback */
 	void *pVdbeBranchArg;	/* 1st argument */
 #endif
-#ifndef SQL_UNTESTABLE
 	int (*xTestCallback) (int);	/* Invoked by sqlFaultSim() */
-#endif
 	int bLocaltimeFault;	/* True to fail localtime() calls */
 	int iOnceResetThreshold;	/* When to reset OP_Once counters */
 };
@@ -3032,9 +2983,7 @@ void sqlScratchFree(void *);
 void *sqlPageMalloc(int);
 void sqlPageFree(void *);
 void sqlMemSetDefault(void);
-#ifndef SQL_UNTESTABLE
 void sqlBenignMallocHooks(void (*)(void), void (*)(void));
-#endif
 int sqlHeapNearlyFull(void);
 
 /*
@@ -3371,11 +3320,7 @@ int
 vdbe_emit_open_cursor(struct Parse *parse, int cursor, int index_id,
 		      struct space *space);
 
-#ifdef SQL_UNTESTABLE
-#define sqlFaultSim(X) SQL_OK
-#else
 int sqlFaultSim(int);
-#endif
 
 /**
  * The parser calls this routine in order to create a new VIEW.
@@ -3677,10 +3622,8 @@ void sqlExprAnalyzeAggregates(NameContext *, Expr *);
 void sqlExprAnalyzeAggList(NameContext *, ExprList *);
 int sqlFunctionUsesThisSrc(Expr *, SrcList *);
 Vdbe *sqlGetVdbe(Parse *);
-#ifndef SQL_UNTESTABLE
 void sqlPrngSaveState(void);
 void sqlPrngRestoreState(void);
-#endif
 void sqlRollbackAll(Vdbe *);
 
 /**
@@ -4493,16 +4436,14 @@ sql_value *sqlValueNew(sql *);
 int sqlValueFromExpr(sql *, Expr *, enum field_type type,
 			 sql_value **);
 void sql_value_apply_type(sql_value *val, enum field_type type);
-#ifndef SQL_AMALGAMATION
+
 extern const unsigned char sqlOpcodeProperty[];
-extern const char sqlStrBINARY[];
 extern const unsigned char sqlUpperToLower[];
 extern const unsigned char sqlCtypeMap[];
 extern const Token sqlIntTokens[];
 extern SQL_WSD struct sqlConfig sqlConfig;
 extern FuncDefHash sqlBuiltinFunctions;
 extern int sqlPendingByte;
-#endif
 
 /**
  * Generate code to implement the "ALTER TABLE xxx RENAME TO yyy"
@@ -4887,16 +4828,10 @@ fk_constraint_is_required(struct space *space, const int *changes);
 
 /*
  * The interface to the code in fault.c used for identifying "benign"
- * malloc failures. This is only present if sql_UNTESTABLE
- * is not defined.
+ * malloc failures.
  */
-#ifndef SQL_UNTESTABLE
 void sqlBeginBenignMalloc(void);
 void sqlEndBenignMalloc(void);
-#else
-#define sqlBeginBenignMalloc()
-#define sqlEndBenignMalloc()
-#endif
 
 /*
  * Allowed return values from sqlFindInIndex()
@@ -4921,9 +4856,6 @@ int sqlExprCheckHeight(Parse *, int);
 #define sqlSelectExprHeight(x) 0
 #define sqlExprCheckHeight(x,y)
 #endif
-
-u32 sqlGet4byte(const u8 *);
-void sqlPut4byte(u8 *, u32);
 
 #ifdef SQL_DEBUG
 void sqlParserTrace(FILE *, char *);

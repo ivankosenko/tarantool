@@ -147,7 +147,7 @@ int sql_found_count = 0;
  * Test a register to see if it exceeds the current maximum blob size.
  * If it does, record the new maximum blob size.
  */
-#if defined(SQL_TEST) && !defined(SQL_UNTESTABLE)
+#if defined(SQL_TEST)
 # define UPDATE_MAX_BLOBSIZE(P)  updateMaxBlobsize(P)
 #else
 # define UPDATE_MAX_BLOBSIZE(P)

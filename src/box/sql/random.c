@@ -108,7 +108,6 @@ sql_randomness(int N, void *pBuf)
 	} while (--N);
 }
 
-#ifndef SQL_UNTESTABLE
 /*
  * For testing purposes, we sometimes want to preserve the state of
  * PRNG and restore the PRNG to its saved state at a later time, or
@@ -132,4 +131,3 @@ sqlPrngRestoreState(void)
 	       sizeof(sqlPrng)
 	    );
 }
-#endif				/* SQL_UNTESTABLE */

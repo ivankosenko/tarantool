@@ -38,24 +38,10 @@
  */
 #include "sqlInt.h"
 #include <stdarg.h>
-#if HAVE_ISNAN || SQL_HAVE_ISNAN
 #include <math.h>
-#endif
 #include "coll/coll.h"
 #include <unicode/ucasemap.h>
 #include "errinj.h"
-
-/*
- * Routine needed to support the testcase() macro.
- */
-#ifdef SQL_COVERAGE_TEST
-void
-sqlCoverage(int x)
-{
-	static unsigned dummy = 0;
-	dummy += (unsigned)x;
-}
-#endif
 
 /*
  * Give a callback to the test harness that can be used to simulate faults
@@ -68,14 +54,12 @@ sqlCoverage(int x)
  * Return whatever integer value the test callback returns, or return
  * SQL_OK if no test callback is installed.
  */
-#ifndef SQL_UNTESTABLE
 int
    sqlFaultSim(int iTest)
 {
 	int (*xCallback) (int) = sqlGlobalConfig.xTestCallback;
 	return xCallback ? xCallback(iTest) : SQL_OK;
 }
-#endif
 
 /*
  * Return true if the floating point value is Not a Number (NaN).
@@ -87,30 +71,7 @@ int
 sqlIsNaN(double x)
 {
 	int rc;			/* The value return */
-#if !SQL_HAVE_ISNAN && !HAVE_ISNAN
-	/*
-	 * Systems that support the isnan() library function should probably
-	 * make use
-	 *
-	 * This NaN test sometimes fails if compiled on GCC with -ffast-math.
-	 * On the other hand, the use of -ffast-math comes with the following
-	 * warning:
-	 *
-	 *      This option [-ffast-math] should never be turned on by any
-	 *      -O option since it can result in incorrect output for programs
-	 *      which depend on an exact implementation of IEEE or ISO
-	 *      rules/specifications for math functions.
-	 */
-#ifdef __FAST_MATH__
-#error sql will not work correctly with the -ffast-math option of GCC.
-#endif
-	volatile double y = x;
-	volatile double z = y;
-	rc = (y != z);
-#else				/* if HAVE_ISNAN */
 	rc = isnan(x);
-#endif				/* HAVE_ISNAN */
-	testcase(rc);
 	return rc;
 }
 
@@ -1121,53 +1082,6 @@ sqlVarintLen(u64 v)
 		assert(i < 10);
 	}
 	return i;
-}
-
-/*
- * Read or write a four-byte big-endian integer value.
- */
-u32
-sqlGet4byte(const u8 * p)
-{
-#if SQL_BYTEORDER==4321
-	u32 x;
-	memcpy(&x, p, 4);
-	return x;
-#elif SQL_BYTEORDER==1234 && !defined(SQL_DISABLE_INTRINSIC) \
-    && defined(__GNUC__) && GCC_VERSION>=4003000
-	u32 x;
-	memcpy(&x, p, 4);
-	return __builtin_bswap32(x);
-#elif SQL_BYTEORDER==1234 && !defined(SQL_DISABLE_INTRINSIC) \
-    && defined(_MSC_VER) && _MSC_VER>=1300
-	u32 x;
-	memcpy(&x, p, 4);
-	return _byteswap_ulong(x);
-#else
-	testcase(p[0] & 0x80);
-	return ((unsigned)p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
-#endif
-}
-
-void
-sqlPut4byte(unsigned char *p, u32 v)
-{
-#if SQL_BYTEORDER==4321
-	memcpy(p, &v, 4);
-#elif SQL_BYTEORDER==1234 && !defined(SQL_DISABLE_INTRINSIC) \
-    && defined(__GNUC__) && GCC_VERSION>=4003000
-	u32 x = __builtin_bswap32(v);
-	memcpy(p, &x, 4);
-#elif SQL_BYTEORDER==1234 && !defined(SQL_DISABLE_INTRINSIC) \
-    && defined(_MSC_VER) && _MSC_VER>=1300
-	u32 x = _byteswap_ulong(v);
-	memcpy(p, &x, 4);
-#else
-	p[0] = (u8) (v >> 24);
-	p[1] = (u8) (v >> 16);
-	p[2] = (u8) (v >> 8);
-	p[3] = (u8) v;
-#endif
 }
 
 /*
