@@ -254,15 +254,6 @@ sqlHeapNearlyFull(void)
 }
 
 /*
- * Deinitialize the memory allocation subsystem.
- */
-void
-sqlMallocEnd(void)
-{
-	memset(&mem0, 0, sizeof(mem0));
-}
-
-/*
  * Return the amount of memory currently checked out.
  */
 sql_int64
@@ -271,19 +262,6 @@ sql_memory_used(void)
 	sql_int64 res, mx;
 	sql_status64(SQL_STATUS_MEMORY_USED, &res, &mx, 0);
 	return res;
-}
-
-/*
- * Return the maximum amount of memory that has ever been
- * checked out since either the beginning of this process
- * or since the most recent reset.
- */
-sql_int64
-sql_memory_highwater(int resetFlag)
-{
-	sql_int64 res, mx;
-	sql_status64(SQL_STATUS_MEMORY_USED, &res, &mx, resetFlag);
-	return mx;
 }
 
 /*
@@ -421,14 +399,6 @@ sqlDbMallocSize(sql * db, void *p)
 		return db->lookaside.sz;
 }
 
-sql_uint64
-sql_msize(void *p)
-{
-	assert(sqlMemdebugNoType(p, (u8) ~ MEMTYPE_HEAP));
-	assert(sqlMemdebugHasType(p, MEMTYPE_HEAP));
-	return p ? sql_sized_sizeof(p) : 0;
-}
-
 /*
  * Free memory previously obtained from sqlMalloc().
  */
@@ -545,14 +515,6 @@ sqlRealloc(void *pOld, u64 nBytes)
  * The public interface to sqlRealloc.  Make sure that the memory
  * subsystem is initialized prior to invoking sqlRealloc.
  */
-void *
-sql_realloc(void *pOld, int n)
-{
-	if (n < 0)
-		n = 0;		/* IMP: R-26507-47431 */
-	return sqlRealloc(pOld, n);
-}
-
 void *
 sql_realloc64(void *pOld, sql_uint64 n)
 {
@@ -775,16 +737,6 @@ sqlDbStrNDup(sql * db, const char *z, u64 n)
 		zNew[n] = 0;
 	}
 	return zNew;
-}
-
-/*
- * Free any prior content in *pz and replace it with a copy of zNew.
- */
-void
-sqlSetString(char **pz, sql * db, const char *zNew)
-{
-	sqlDbFree(db, *pz);
-	*pz = sqlDbStrDup(db, zNew);
 }
 
 /*

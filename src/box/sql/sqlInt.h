@@ -399,16 +399,10 @@ void *
 sql_malloc64(sql_uint64);
 
 void *
-sql_realloc(void *, int);
-
-void *
 sql_realloc64(void *, sql_uint64);
 
 void
 sql_free(void *);
-
-sql_uint64
-sql_msize(void *);
 
 int
 sql_stricmp(const char *, const char *);
@@ -2964,7 +2958,6 @@ unsigned sqlStrlen30(const char *);
 #define sqlStrNICmp sql_strnicmp
 
 void sqlMallocInit(void);
-void sqlMallocEnd(void);
 void *sqlMalloc(u64);
 void *sqlMallocZero(u64);
 void *sqlDbMallocZero(sql *, u64);
@@ -3035,7 +3028,6 @@ void sqlTreeViewSelect(TreeView *, const Select *, u8);
 void sqlTreeViewWith(TreeView *, const With *);
 #endif
 
-void sqlSetString(char **, sql *, const char *);
 void sqlDequote(char *);
 
 /**

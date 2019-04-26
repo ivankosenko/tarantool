@@ -513,27 +513,6 @@ sql_create_function_v2(sql * db,
 	return rc;
 }
 
-#ifndef SQL_OMIT_TRACE
-/* Register a trace callback using the version-2 interface.
- */
-int
-sql_trace_v2(sql * db,		/* Trace this connection */
-		 unsigned mTrace,	/* Mask of events to be traced */
-		 int (*xTrace) (unsigned, void *, void *, void *),	/* Callback to invoke */
-		 void *pArg)		/* Context */
-{
-	if (mTrace == 0)
-		xTrace = 0;
-	if (xTrace == 0)
-		mTrace = 0;
-	db->mTrace = mTrace;
-	db->xTrace = xTrace;
-	db->pTraceArg = pArg;
-	return SQL_OK;
-}
-
-#endif				/* SQL_OMIT_TRACE */
-
 /*
  * This function returns true if main-memory should be used instead of
  * a temporary file for transient pager files and statement journals.
