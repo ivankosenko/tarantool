@@ -138,8 +138,6 @@ sqlStrlen30(const char *z)
 static SQL_NOINLINE void
 sqlErrorFinish(sql * db, int err_code)
 {
-	if (db->pErr)
-		sqlValueSetNull(db->pErr);
 	sqlSystemError(db, err_code);
 }
 
@@ -153,7 +151,7 @@ sqlError(sql * db, int err_code)
 {
 	assert(db != 0);
 	db->errCode = err_code;
-	if (err_code || db->pErr)
+	if (err_code)
 		sqlErrorFinish(db, err_code);
 }
 
@@ -199,16 +197,8 @@ sqlErrorWithMsg(sql * db, int err_code, const char *zFormat, ...)
 	assert(db != 0);
 	db->errCode = err_code;
 	sqlSystemError(db, err_code);
-	if (zFormat == 0) {
+	if (zFormat == 0)
 		sqlError(db, err_code);
-	} else if (db->pErr || (db->pErr = sqlValueNew(db)) != 0) {
-		char *z;
-		va_list ap;
-		va_start(ap, zFormat);
-		z = sqlVMPrintf(db, zFormat, ap);
-		va_end(ap);
-		sqlValueSetStr(db->pErr, -1, z, SQL_DYNAMIC);
-	}
 }
 
 /*
