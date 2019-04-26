@@ -523,7 +523,6 @@ sqlStep(Vdbe * p)
 		checkProfileCallback(db, p);
 #endif
 
-	db->errCode = rc;
 	if (SQL_NOMEM == sqlApiExit(p->db, p->rc)) {
 		p->rc = SQL_NOMEM;
 	}

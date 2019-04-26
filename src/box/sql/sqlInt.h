@@ -1415,7 +1415,6 @@ struct sql {
 	struct Vdbe *pVdbe;	/* List of active virtual machines */
 	struct coll *pDfltColl;	/* The default collating sequence (BINARY) */
 	i64 szMmap;		/* Default mmap_size setting */
-	int errCode;		/* Most recent error code (sql_*) */
 	int errMask;		/* & result codes with this before returning */
 	int iSysErrno;		/* Errno value from last system error */
 	u16 dbOptFlags;		/* Flags to enable/disable optimizations */
