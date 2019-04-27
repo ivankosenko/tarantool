@@ -1717,17 +1717,13 @@ case OP_Function: {
 	}
 #endif
 	MemSetTypeFlag(pCtx->pOut, MEM_Null);
-	pCtx->fErrorOrAux = 0;
+	pCtx->is_aborted = false;
 	(*pCtx->pFunc->xSFunc)(pCtx, pCtx->argc, pCtx->argv);/* IMP: R-24505-23230 */
 
 	/* If the function returned an error, throw an exception */
-	if (pCtx->fErrorOrAux) {
-		if (pCtx->isError) {
-			sqlVdbeError(p, "%s", sql_value_text(pCtx->pOut));
-			rc = pCtx->isError;
-		}
-		sqlVdbeDeleteAuxData(db, &p->pAuxData, pCtx->iOp, pOp->p1);
-		if (rc) goto abort_due_to_error;
+	if (pCtx->is_aborted) {
+		rc = SQL_TARANTOOL_ERROR;
+		goto abort_due_to_error;
 	}
 
 	/* Copy the result of the function into register P3 */
@@ -4894,9 +4890,6 @@ case OP_Program: {        /* jump */
 	pFrame->pParent = p->pFrame;
 	pFrame->nChange = p->nChange;
 	pFrame->nDbChange = p->db->nChange;
-	assert(pFrame->pAuxData==0);
-	pFrame->pAuxData = p->pAuxData;
-	p->pAuxData = 0;
 	p->nChange = 0;
 	p->pFrame = pFrame;
 	p->aMem = aMem = VdbeFrameMem(pFrame);
@@ -5159,16 +5152,13 @@ case OP_AggStep: {
 	pMem->n++;
 	sqlVdbeMemInit(&t, db, MEM_Null);
 	pCtx->pOut = &t;
-	pCtx->fErrorOrAux = 0;
+	pCtx->is_aborted = false;
 	pCtx->skipFlag = 0;
 	(pCtx->pFunc->xSFunc)(pCtx,pCtx->argc,pCtx->argv); /* IMP: R-24505-23230 */
-	if (pCtx->fErrorOrAux) {
-		if (pCtx->isError) {
-			sqlVdbeError(p, "%s", sql_value_text(&t));
-			rc = pCtx->isError;
-		}
+	if (pCtx->is_aborted) {
 		sqlVdbeMemRelease(&t);
-		if (rc) goto abort_due_to_error;
+		rc = SQL_TARANTOOL_ERROR;
+		goto abort_due_to_error;
 	} else {
 		assert(t.flags==MEM_Null);
 	}

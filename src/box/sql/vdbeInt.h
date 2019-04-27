@@ -62,9 +62,6 @@ typedef unsigned Bool;
 /* Opaque type used by code in vdbesort.c */
 typedef struct VdbeSorter VdbeSorter;
 
-/* Elements of the linked list at Vdbe.pAuxData */
-typedef struct AuxData AuxData;
-
 /* Types of VDBE cursors */
 #define CURTYPE_TARANTOOL   0
 #define CURTYPE_SORTER      1
@@ -161,7 +158,6 @@ struct VdbeFrame {
 	Mem *aMem;		/* Array of memory cells for parent frame */
 	VdbeCursor **apCsr;	/* Array of Vdbe cursors for parent frame */
 	void *token;		/* Copy of SubProgram.token */
-	AuxData *pAuxData;	/* Linked list of auxdata allocations */
 	int nCursor;		/* Number of entries in apCsr */
 	int pc;			/* Program Counter in parent (calling) frame */
 	int nOp;		/* Size of aOp array */
@@ -304,21 +300,6 @@ mem_apply_numeric_type(struct Mem *record);
 #endif
 
 /*
- * Each auxiliary data pointer stored by a user defined function
- * implementation calling sql_set_auxdata() is stored in an instance
- * of this structure. All such structures associated with a single VM
- * are stored in a linked list headed at Vdbe.pAuxData. All are destroyed
- * when the VM is halted (if not before).
- */
-struct AuxData {
-	int iOp;		/* Instruction number of OP_Function opcode */
-	int iArg;		/* Index of function argument. */
-	void *pAux;		/* Aux data pointer */
-	void (*xDelete) (void *);	/* Destructor for the aux data */
-	AuxData *pNext;		/* Next element in list */
-};
-
-/*
  * The "context" argument for an installable function.  A pointer to an
  * instance of this structure is the first argument to the routines used
  * implement the SQL functions.
@@ -337,9 +318,12 @@ struct sql_context {
 	Mem *pMem;		/* Memory cell used to store aggregate context */
 	Vdbe *pVdbe;		/* The VM that owns this context */
 	int iOp;		/* Instruction number of OP_Function */
-	int isError;		/* Error code returned by the function. */
+	/*
+	 * True, if an error occurred during the execution of the
+	 * function.
+	 */
+	bool is_aborted;
 	u8 skipFlag;		/* Skip accumulator loading if true */
-	u8 fErrorOrAux;		/* isError!=0 or pVdbe->pAuxData modified */
 	u8 argc;		/* Number of arguments */
 	sql_value *argv[1];	/* Argument set */
 };
@@ -445,7 +429,6 @@ struct Vdbe {
 	int nFrame;		/* Number of frames in pFrame list */
 	u32 expmask;		/* Binding to these vars invalidates VM */
 	SubProgram *pProgram;	/* Linked list of all sub-programs used by VM */
-	AuxData *pAuxData;	/* Linked list of auxdata allocations */
 	/* Anonymous savepoint for aborts only */
 	Savepoint *anonymous_savepoint;
 #ifdef SQL_ENABLE_STMT_SCANSTATUS
@@ -478,7 +461,6 @@ u32 sqlVdbeSerialTypeLen(u32);
 u32 sqlVdbeSerialType(Mem *, int, u32 *);
 u32 sqlVdbeSerialPut(unsigned char *, Mem *, u32);
 u32 sqlVdbeSerialGet(const unsigned char *, u32, Mem *);
-void sqlVdbeDeleteAuxData(sql *, AuxData **, int, int);
 
 int sqlVdbeExec(Vdbe *);
 int sqlVdbeList(Vdbe *);
