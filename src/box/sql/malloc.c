@@ -926,7 +926,6 @@ static SQL_NOINLINE int
 apiOomError(sql * db)
 {
 	sqlOomClear(db);
-	sqlError(db, SQL_NOMEM);
 	return SQL_NOMEM;
 }
 

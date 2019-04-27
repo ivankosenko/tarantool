@@ -909,9 +909,6 @@ sql_stmt_busy(sql_stmt *);
 int
 sql_init_db(sql **db);
 
-int
-sql_close(sql *);
-
 
 /**
  * Get number of the named parameter in the prepared sql
@@ -1416,7 +1413,6 @@ struct sql {
 	struct coll *pDfltColl;	/* The default collating sequence (BINARY) */
 	i64 szMmap;		/* Default mmap_size setting */
 	int errMask;		/* & result codes with this before returning */
-	int iSysErrno;		/* Errno value from last system error */
 	u16 dbOptFlags;		/* Flags to enable/disable optimizations */
 	u8 enc;			/* Text encoding */
 	u8 temp_store;		/* 1: file 2: memory 0: default */
@@ -4418,9 +4414,6 @@ sql_atoi64(const char *z, int64_t *val, int length);
 int
 sql_dec_or_hex_to_i64(const char *z, int64_t *val);
 
-void sqlErrorWithMsg(sql *, int, const char *, ...);
-void sqlError(sql *, int);
-void sqlSystemError(sql *, int);
 void *sqlHexToBlob(sql *, const char *z, int n);
 u8 sqlHexToInt(int h);
 
