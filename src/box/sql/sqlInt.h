@@ -274,12 +274,6 @@
 #define NEVER(X)       (X)
 #endif
 
-/*
- * Return true (non-zero) if the input is an integer that is too large
- * to fit in 32-bits.  This macro is used inside of various testcase()
- * macros to verify that we have tested sql for large-file support.
- */
-#define IS_BIG_INT(X)  (((X)&~(i64)0xffffffff)!=0)
 
 #include "hash.h"
 #include "parse.h"
@@ -596,37 +590,21 @@ sql_exec(sql *,	/* An open database */
 #define SQL_IOERR_READ              (SQL_IOERR | (1<<8))
 #define SQL_IOERR_SHORT_READ        (SQL_IOERR | (2<<8))
 #define SQL_IOERR_WRITE             (SQL_IOERR | (3<<8))
-#define SQL_IOERR_FSYNC             (SQL_IOERR | (4<<8))
 #define SQL_IOERR_DIR_FSYNC         (SQL_IOERR | (5<<8))
 #define SQL_IOERR_TRUNCATE          (SQL_IOERR | (6<<8))
 #define SQL_IOERR_FSTAT             (SQL_IOERR | (7<<8))
 #define SQL_IOERR_UNLOCK            (SQL_IOERR | (8<<8))
 #define SQL_IOERR_RDLOCK            (SQL_IOERR | (9<<8))
 #define SQL_IOERR_DELETE            (SQL_IOERR | (10<<8))
-#define SQL_IOERR_BLOCKED           (SQL_IOERR | (11<<8))
 #define SQL_IOERR_NOMEM             (SQL_IOERR | (12<<8))
 #define SQL_IOERR_ACCESS            (SQL_IOERR | (13<<8))
-#define SQL_IOERR_CHECKRESERVEDLOCK (SQL_IOERR | (14<<8))
-#define SQL_IOERR_LOCK              (SQL_IOERR | (15<<8))
 #define SQL_IOERR_CLOSE             (SQL_IOERR | (16<<8))
-#define SQL_IOERR_DIR_CLOSE         (SQL_IOERR | (17<<8))
-#define SQL_IOERR_SHMOPEN           (SQL_IOERR | (18<<8))
-#define SQL_IOERR_SHMSIZE           (SQL_IOERR | (19<<8))
-#define SQL_IOERR_SHMLOCK           (SQL_IOERR | (20<<8))
-#define SQL_IOERR_SHMMAP            (SQL_IOERR | (21<<8))
-#define SQL_IOERR_SEEK              (SQL_IOERR | (22<<8))
 #define SQL_IOERR_DELETE_NOENT      (SQL_IOERR | (23<<8))
-#define SQL_IOERR_MMAP              (SQL_IOERR | (24<<8))
 #define SQL_IOERR_GETTEMPPATH       (SQL_IOERR | (25<<8))
-#define SQL_IOERR_CONVPATH          (SQL_IOERR | (26<<8))
-#define SQL_IOERR_VNODE             (SQL_IOERR | (27<<8))
 #define SQL_CONSTRAINT_CHECK        (SQL_CONSTRAINT | (1<<8))
 #define SQL_CONSTRAINT_FOREIGNKEY   (SQL_CONSTRAINT | (3<<8))
-#define SQL_CONSTRAINT_FUNCTION     (SQL_CONSTRAINT | (4<<8))
 #define SQL_CONSTRAINT_NOTNULL      (SQL_CONSTRAINT | (5<<8))
-#define SQL_CONSTRAINT_PRIMARYKEY   (SQL_CONSTRAINT | (6<<8))
 #define SQL_CONSTRAINT_TRIGGER      (SQL_CONSTRAINT | (7<<8))
-#define SQL_CONSTRAINT_UNIQUE       (SQL_CONSTRAINT | (8<<8))
 
 /**
  * Subtype of a main type. Allows to do some subtype specific
@@ -673,22 +651,6 @@ sql_initialize(void);
 int
 sql_os_end(void);
 
-#define SQL_CONFIG_SCRATCH       6	/* void*, int sz, int N */
-#define SQL_CONFIG_MEMSTATUS     9	/* boolean */
-#define SQL_CONFIG_LOOKASIDE    13	/* int int */
-#define SQL_CONFIG_LOG          16	/* xFunc, void* */
-#define SQL_CONFIG_URI          17	/* int */
-#define SQL_CONFIG_COVERING_INDEX_SCAN 20	/* int */
-#define SQL_CONFIG_SQLLOG       21	/* xSqllog, void* */
-#define SQL_CONFIG_MMAP_SIZE    22	/* sql_int64, sql_int64 */
-#define SQL_CONFIG_PMASZ               24	/* unsigned int szPma */
-#define SQL_CONFIG_STMTJRNL_SPILL      25	/* int nByte */
-
-#define SQL_DBCONFIG_LOOKASIDE             1001	/* void* int int */
-#define SQL_DBCONFIG_ENABLE_FKEY           1002	/* int int* */
-#define SQL_DBCONFIG_ENABLE_TRIGGER        1003	/* int int* */
-#define SQL_DBCONFIG_NO_CKPT_ON_CLOSE      1006	/* int int* */
-
 #define SQL_TRACE_STMT       0x01
 #define SQL_TRACE_PROFILE    0x02
 #define SQL_TRACE_ROW        0x04
@@ -697,10 +659,6 @@ sql_os_end(void);
 #define SQL_DETERMINISTIC    0x800
 
 #define SQL_STATUS_MEMORY_USED          0
-#define SQL_STATUS_PAGECACHE_USED       1
-#define SQL_STATUS_PAGECACHE_OVERFLOW   2
-#define SQL_STATUS_SCRATCH_USED         3
-#define SQL_STATUS_SCRATCH_OVERFLOW     4
 #define SQL_STATUS_MALLOC_SIZE          5
 #define SQL_STATUS_PARSER_STACK         6
 #define SQL_STATUS_PAGECACHE_SIZE       7
@@ -733,40 +691,11 @@ sql_create_function_v2(sql * db,
 #define SQL_OPEN_CREATE           0x00000004	/* Ok for sql_open_v2() */
 #define SQL_OPEN_DELETEONCLOSE    0x00000008	/* VFS only */
 #define SQL_OPEN_EXCLUSIVE        0x00000010	/* VFS only */
-#define SQL_OPEN_AUTOPROXY        0x00000020	/* VFS only */
 #define SQL_OPEN_URI              0x00000040	/* Ok for sql_open_v2() */
-#define SQL_OPEN_MEMORY           0x00000080	/* Ok for sql_open_v2() */
 #define SQL_OPEN_MAIN_DB          0x00000100	/* VFS only */
-#define SQL_OPEN_TEMP_DB          0x00000200	/* VFS only */
-#define SQL_OPEN_SHAREDCACHE      0x00020000	/* Ok for sql_open_v2() */
-#define SQL_OPEN_PRIVATECACHE     0x00040000	/* Ok for sql_open_v2() */
 
 sql_vfs *
 sql_vfs_find(const char *zVfsName);
-
-#define SQL_TESTCTRL_FIRST                    5
-#define SQL_TESTCTRL_PRNG_SAVE                5
-#define SQL_TESTCTRL_PRNG_RESTORE             6
-#define SQL_TESTCTRL_PRNG_RESET               7
-#define SQL_TESTCTRL_BITVEC_TEST              8
-#define SQL_TESTCTRL_FAULT_INSTALL            9
-#define SQL_TESTCTRL_BENIGN_MALLOC_HOOKS     10
-#define SQL_TESTCTRL_PENDING_BYTE            11
-#define SQL_TESTCTRL_ASSERT                  12
-#define SQL_TESTCTRL_ALWAYS                  13
-#define SQL_TESTCTRL_RESERVE                 14
-#define SQL_TESTCTRL_OPTIMIZATIONS           15
-#define SQL_TESTCTRL_ISKEYWORD               16
-#define SQL_TESTCTRL_SCRATCHMALLOC           17
-#define SQL_TESTCTRL_LOCALTIME_FAULT         18
-#define SQL_TESTCTRL_EXPLAIN_STMT            19	/* NOT USED */
-#define SQL_TESTCTRL_ONCE_RESET_THRESHOLD    19
-#define SQL_TESTCTRL_NEVER_CORRUPT           20
-#define SQL_TESTCTRL_VDBE_COVERAGE           21
-#define SQL_TESTCTRL_BYTEORDER               22
-#define SQL_TESTCTRL_ISINIT                  23
-#define SQL_TESTCTRL_SORTER_MMAP             24
-#define SQL_TESTCTRL_LAST                    24
 
 int
 sql_status64(int op, sql_int64 * pCurrent,
@@ -792,22 +721,13 @@ struct sql_io_methods {
 };
 
 #define SQL_FCNTL_LOCKSTATE               1
-#define SQL_FCNTL_GET_LOCKPROXYFILE       2
-#define SQL_FCNTL_SET_LOCKPROXYFILE       3
 #define SQL_FCNTL_LAST_ERRNO              4
 #define SQL_FCNTL_SIZE_HINT               5
 #define SQL_FCNTL_CHUNK_SIZE              6
-#define SQL_FCNTL_FILE_POINTER            7
-#define SQL_FCNTL_SYNC_OMITTED            8
-#define SQL_FCNTL_OVERWRITE              10
 #define SQL_FCNTL_VFSNAME                11
-#define SQL_FCNTL_POWERSAFE_OVERWRITE    12
-#define SQL_FCNTL_PRAGMA                 13
 #define SQL_FCNTL_TEMPFILENAME           15
 #define SQL_FCNTL_MMAP_SIZE              16
-#define SQL_FCNTL_TRACE                  17
 #define SQL_FCNTL_HAS_MOVED              18
-#define SQL_FCNTL_SYNC                   19
 
 int
 sql_os_init(void);
@@ -818,20 +738,12 @@ sql_soft_heap_limit64(sql_int64 N);
 int
 sql_limit(sql *, int id, int newVal);
 
-#define SQL_SYNC_NORMAL        0x00002
-#define SQL_SYNC_FULL          0x00003
-#define SQL_SYNC_DATAONLY      0x00010
-
 extern char *
 sql_temp_directory;
 
 const char *
 sql_uri_parameter(const char *zFilename,
 		      const char *zParam);
-
-#define SQL_ACCESS_EXISTS    0
-#define SQL_ACCESS_READWRITE 1	/* Used by PRAGMA temp_store_directory */
-#define SQL_ACCESS_READ      2	/* Unused */
 
 #define SQL_DBSTATUS_LOOKASIDE_USED       0
 #define SQL_DBSTATUS_CACHE_USED           1
@@ -2896,16 +2808,6 @@ struct TreeView {
 #endif				/* SQL_DEBUG */
 
 /*
- * Assuming zIn points to the first byte of a UTF-8 character,
- * advance zIn to point to the first byte of the next UTF-8 character.
- */
-#define SQL_SKIP_UTF8(zIn) {                        \
-  if( (*(zIn++))>=0xc0 ){                              \
-    while( (*zIn & 0xc0)==0x80 ){ zIn++; }             \
-  }                                                    \
-}
-
-/*
  * The following macros mimic the standard library functions toupper(),
  * isspace(), isalnum(), isdigit() and isxdigit(), respectively. The
  * sql versions only work for ASCII characters, regardless of locale.
@@ -4764,12 +4666,6 @@ bool
 fk_constraint_is_required(struct space *space, const int *changes);
 
 /*
- * Available fault injectors.  Should be numbered beginning with 0.
- */
-#define SQL_FAULTINJECTOR_MALLOC     0
-#define SQL_FAULTINJECTOR_COUNT      1
-
-/*
  * The interface to the code in fault.c used for identifying "benign"
  * malloc failures.
  */
@@ -4843,8 +4739,6 @@ int sqlMemdebugNoType(void *, u8);
 #endif
 #define MEMTYPE_HEAP       0x01	/* General heap allocations */
 #define MEMTYPE_LOOKASIDE  0x02	/* Heap that might have been lookaside */
-#define MEMTYPE_SCRATCH    0x04	/* Scratch allocations */
-#define MEMTYPE_PCACHE     0x08	/* Page cache allocations */
 
 
 int sqlExprVectorSize(Expr * pExpr);
