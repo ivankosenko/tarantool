@@ -137,10 +137,6 @@ sqlVdbeSetSql(Vdbe * p, const char *z, int n, int isPrepareV2)
 	assert(isPrepareV2 == 1 || isPrepareV2 == 0);
 	if (p == 0)
 		return;
-#if defined(SQL_OMIT_TRACE)
-	if (!isPrepareV2)
-		return;
-#endif
 	assert(p->zSql == 0);
 	p->zSql = sqlDbStrNDup(p->db, z, n);
 	p->isPrepareV2 = (u8) isPrepareV2;
@@ -1753,40 +1749,6 @@ sqlVdbePrintSql(Vdbe * p)
 }
 #endif
 
-#if !defined(SQL_OMIT_TRACE) && defined(SQL_ENABLE_IOTRACE)
-/*
- * Print an IOTRACE message showing SQL content.
- */
-void
-sqlVdbeIOTraceSql(Vdbe * p)
-{
-	int nOp = p->nOp;
-	VdbeOp *pOp;
-	if (sqlIoTrace == 0)
-		return;
-	if (nOp < 1)
-		return;
-	pOp = &p->aOp[0];
-	if (pOp->opcode == OP_Init && pOp->p4.z != 0) {
-		int i, j;
-		char z[1000];
-		sql_snprintf(sizeof(z), z, "%s", pOp->p4.z);
-		for (i = 0; sqlIsspace(z[i]); i++) {
-		}
-		for (j = 0; z[i]; i++) {
-			if (sqlIsspace(z[i])) {
-				if (z[i - 1] != ' ') {
-					z[j++] = ' ';
-				}
-			} else {
-				z[j++] = z[i];
-			}
-		}
-		z[j] = 0;
-		sqlIoTrace("SQL %s\n", z);
-	}
-}
-#endif				/* !SQL_OMIT_TRACE && SQL_ENABLE_IOTRACE */
 
 /* An instance of this object describes bulk memory available for use
  * by subcomponents of a prepared statement.  Space is allocated out

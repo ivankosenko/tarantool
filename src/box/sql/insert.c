@@ -335,7 +335,6 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	sqlVdbeCountChanges(v);
 	sql_set_multi_write(pParse, pSelect != NULL || trigger != NULL);
 
-#ifndef SQL_OMIT_XFER_OPT
 	/* If the statement is of the form
 	 *
 	 *       INSERT INTO <table1> SELECT * FROM <table2>;
@@ -351,7 +350,6 @@ sqlInsert(Parse * pParse,	/* Parser context */
 		assert(pList == 0);
 		goto insert_end;
 	}
-#endif				/* SQL_OMIT_XFER_OPT */
 
 	/*
 	 * Allocate registers for holding the tupleid of the new
@@ -1066,7 +1064,6 @@ vdbe_emit_insertion_completion(struct Vdbe *v, struct space *space,
 	sqlVdbeChangeP5(v, pik_flags);
 }
 
-#ifndef SQL_OMIT_XFER_OPT
 /**
  * Check to see if index @src is compatible as a source of data
  * for index @dest in an insert transfer optimization. The rules
@@ -1336,4 +1333,3 @@ xferOptimization(Parse * pParse,	/* Parser context */
 		return 1;
 	}
 }
-#endif				/* SQL_OMIT_XFER_OPT */

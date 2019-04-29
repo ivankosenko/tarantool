@@ -60,11 +60,7 @@ struct Keyword {
 #else
 #  define AUTOINCR   0x00000010
 #endif
-#ifdef SQL_OMIT_CAST
-#  define CAST       0
-#else
 #  define CAST       0x00000020
-#endif
 #ifdef SQL_OMIT_COMPOUND_SELECT
 #  define COMPOUND   0
 #else
@@ -85,11 +81,7 @@ struct Keyword {
 #define SUBQUERY     0x00001000
 #  define TRIGGER    0x00002000
 #  define VIEW       0x00008000
-#ifdef SQL_OMIT_CTE
-#  define CTE        0
-#else
 #  define CTE        0x00040000
-#endif
 #  define RESERVED   0x00000001
 /*
 ** These are the keywords

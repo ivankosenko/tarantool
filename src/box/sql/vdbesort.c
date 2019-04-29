@@ -894,29 +894,27 @@ sqlVdbeSorterInit(sql * db,	/* Database connection (for malloc()) */
 			pTask->pSorter = pSorter;
 		}
 
-		if (!sqlTempInMemory(db)) {
-			i64 mxCache;	/* Cache size in bytes */
-			u32 szPma = sqlGlobalConfig.szPma;
-			pSorter->mnPmaSize = szPma * pgsz;
+		i64 mxCache;	/* Cache size in bytes */
+		u32 szPma = sqlGlobalConfig.szPma;
+		pSorter->mnPmaSize = szPma * pgsz;
 
-			mxCache = SQL_DEFAULT_CACHE_SIZE;
-			mxCache = mxCache * -1024;
-			mxCache = MIN(mxCache, SQL_MAX_PMASZ);
-			pSorter->mxPmaSize =
-			    MAX(pSorter->mnPmaSize, (int)mxCache);
+		mxCache = SQL_DEFAULT_CACHE_SIZE;
+		mxCache = mxCache * -1024;
+		mxCache = MIN(mxCache, SQL_MAX_PMASZ);
+		pSorter->mxPmaSize =
+		    MAX(pSorter->mnPmaSize, (int)mxCache);
 
-			/* EVIDENCE-OF: R-26747-61719 When the application provides any amount of
-			 * scratch memory using SQL_CONFIG_SCRATCH, sql avoids unnecessary
-			 * large heap allocations.
-			 */
-			if (sqlGlobalConfig.pScratch == 0) {
-				assert(pSorter->iMemory == 0);
-				pSorter->nMemory = pgsz;
-				pSorter->list.aMemory =
-				    (u8 *) sqlMalloc(pgsz);
-				if (!pSorter->list.aMemory)
-					rc = SQL_NOMEM;
-			}
+		/* EVIDENCE-OF: R-26747-61719 When the application provides any amount of
+		 * scratch memory using SQL_CONFIG_SCRATCH, sql avoids unnecessary
+		 * large heap allocations.
+		 */
+		if (sqlGlobalConfig.pScratch == 0) {
+			assert(pSorter->iMemory == 0);
+			pSorter->nMemory = pgsz;
+			pSorter->list.aMemory =
+			    (u8 *) sqlMalloc(pgsz);
+			if (!pSorter->list.aMemory)
+				rc = SQL_NOMEM;
 		}
 
 		if (pCsr->key_def->part_count < 13

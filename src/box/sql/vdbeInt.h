@@ -425,9 +425,7 @@ struct Vdbe {
 	 */
 	uint32_t res_var_count;
 	VList *pVList;		/* Name of variables */
-#ifndef SQL_OMIT_TRACE
 	i64 startTime;		/* Time when query started - used for profiling */
-#endif
 	int nOp;		/* Number of instructions in the program */
 	u16 nResColumn;		/* Number of columns in one row of the result set */
 	u8 errorAction;		/* Recovery action to do in case of an error */

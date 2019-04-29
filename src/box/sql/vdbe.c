@@ -659,7 +659,6 @@ int sqlVdbeExec(Vdbe *p)
 	assert(p->explain==0);
 	p->pResultSet = 0;
 	if (db->u1.isInterrupted) goto abort_due_to_interrupt;
-	sqlVdbeIOTraceSql(p);
 #ifndef SQL_OMIT_PROGRESS_CALLBACK
 	if (db->xProgress) {
 		u32 iPrior = p->aCounter[SQL_STMTSTATUS_VM_STEP];
@@ -1976,7 +1975,6 @@ case OP_Realify: {                  /* in1 */
 	break;
 }
 
-#ifndef SQL_OMIT_CAST
 /* Opcode: Cast P1 P2 * * *
  * Synopsis: type(r[P1])
  *
@@ -2006,7 +2004,6 @@ case OP_Cast: {                  /* in1 */
 	rc = SQL_TARANTOOL_ERROR;
 	goto abort_due_to_error;
 }
-#endif /* SQL_OMIT_CAST */
 
 /* Opcode: Eq P1 P2 P3 P4 P5
  * Synopsis: IF r[P3]==r[P1]
@@ -5357,7 +5354,6 @@ case OP_Init: {          /* jump */
 		break;
 	}
 
-#ifndef SQL_OMIT_TRACE
 	if ((db->mTrace & SQL_TRACE_STMT)!=0
 	    && !p->doingRerun
 	    && (zTrace = (pOp->p4.z ? pOp->p4.z : p->zSql))!=0
@@ -5373,7 +5369,6 @@ case OP_Init: {          /* jump */
 		sqlDebugPrintf("SQL-trace: %s\n", zTrace);
 	}
 #endif /* SQL_DEBUG */
-#endif /* SQL_OMIT_TRACE */
 	assert(pOp->p2>0);
 	if (pOp->p1>=sqlGlobalConfig.iOnceResetThreshold) {
 		for(i=1; i<p->nOp; i++) {

@@ -40,16 +40,6 @@
 #include "version.h"
 #include "box/session.h"
 
-#if !defined(SQL_OMIT_TRACE) && defined(SQL_ENABLE_IOTRACE)
-/*
- * If the following function pointer is not NULL and if
- * SQL_ENABLE_IOTRACE is enabled, then messages describing
- * I/O active are written using this function.  These messages
- * are intended for debugging activity only.
- */
-SQL_API void (SQL_CDECL * sqlIoTrace) (const char *, ...) = 0;
-#endif
-
 /*
  * If the following global variable points to a string which is the
  * name of a directory, then that directory will be used to store
@@ -187,7 +177,6 @@ sql_initialize(void)
 static int
 setupLookaside(sql * db, void *pBuf, int sz, int cnt)
 {
-#ifndef SQL_OMIT_LOOKASIDE
 	void *pStart;
 	if (db->lookaside.nOut) {
 		return SQL_BUSY;
@@ -241,7 +230,6 @@ setupLookaside(sql * db, void *pBuf, int sz, int cnt)
 		db->lookaside.bDisable = 1;
 		db->lookaside.bMalloced = 0;
 	}
-#endif				/* SQL_OMIT_LOOKASIDE */
 	return SQL_OK;
 }
 
@@ -511,44 +499,6 @@ sql_create_function_v2(sql * db,
  out:
 	rc = sqlApiExit(db, rc);
 	return rc;
-}
-
-/*
- * This function returns true if main-memory should be used instead of
- * a temporary file for transient pager files and statement journals.
- * The value returned depends on the value of db->temp_store (runtime
- * parameter) and the compile time value of SQL_TEMP_STORE. The
- * following table describes the relationship between these two values
- * and this functions return value.
- *
- *   SQL_TEMP_STORE     db->temp_store     Location of temporary database
- *   -----------------     --------------     ------------------------------
- *   0                     any                file      (return 0)
- *   1                     1                  file      (return 0)
- *   1                     2                  memory    (return 1)
- *   1                     0                  file      (return 0)
- *   2                     1                  file      (return 0)
- *   2                     2                  memory    (return 1)
- *   2                     0                  memory    (return 1)
- *   3                     any                memory    (return 1)
- */
-int
-sqlTempInMemory(const sql * db)
-{
-#if SQL_TEMP_STORE==1
-	return (db->temp_store == 2);
-#endif
-#if SQL_TEMP_STORE==2
-	return (db->temp_store != 1);
-#endif
-#if SQL_TEMP_STORE==3
-	UNUSED_PARAMETER(db);
-	return 1;
-#endif
-#if SQL_TEMP_STORE<1 || SQL_TEMP_STORE>3
-	UNUSED_PARAMETER(db);
-	return 0;
-#endif
 }
 
 /*

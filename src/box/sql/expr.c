@@ -1502,7 +1502,6 @@ sql_expr_dup(struct sql *db, struct Expr *p, int flags, char **buffer)
  * argument. If an OOM condition is encountered, NULL is returned
  * and the db->mallocFailed flag set.
  */
-#ifndef SQL_OMIT_CTE
 static With *
 withDup(sql * db, With * p)
 {
@@ -1525,9 +1524,6 @@ withDup(sql * db, With * p)
 	}
 	return pRet;
 }
-#else
-#define withDup(x,y) 0
-#endif
 
 /*
  * The following group of routines make deep copies of expressions,
@@ -3785,7 +3781,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 	case TK_REGISTER:{
 			return pExpr->iTable;
 		}
-#ifndef SQL_OMIT_CAST
+
 	case TK_CAST:{
 			/* Expressions of the form:   CAST(pLeft AS token) */
 			inReg =
@@ -3799,7 +3795,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			sql_expr_type_cache_change(pParse, inReg, 1);
 			return inReg;
 		}
-#endif				/* SQL_OMIT_CAST */
+
 	case TK_LT:
 	case TK_LE:
 	case TK_GT:

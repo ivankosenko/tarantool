@@ -945,24 +945,6 @@ sql_bind_parameter_lindex(sql_stmt * pStmt, const char *zName,
 #define SQL_DEFAULT_RECURSIVE_TRIGGERS 0
 #endif
 
-/*
- * Provide a default value for sql_TEMP_STORE in case it is not specified
- * on the command-line
- */
-#ifndef SQL_TEMP_STORE
-#define SQL_TEMP_STORE 1
-#define SQL_TEMP_STORE_xc 1	/* Exclude from ctime.c */
-#endif
-
-/*
- * If no value has been provided for sql_MAX_WORKER_THREADS, or if
- * sql_TEMP_STORE is set to 3 (never use temporary files), set it
- * to zero.
- */
-#if SQL_TEMP_STORE==3
-#undef SQL_MAX_WORKER_THREADS
-#define SQL_MAX_WORKER_THREADS 0
-#endif
 #ifndef SQL_MAX_WORKER_THREADS
 #define SQL_MAX_WORKER_THREADS 8
 #endif
@@ -1376,7 +1358,6 @@ struct sql {
 	int iSysErrno;		/* Errno value from last system error */
 	u16 dbOptFlags;		/* Flags to enable/disable optimizations */
 	u8 enc;			/* Text encoding */
-	u8 temp_store;		/* 1: file 2: memory 0: default */
 	u8 mallocFailed;	/* True if we have seen a malloc failure */
 	u8 bBenignMalloc;	/* Do not require OOMs if true */
 	u8 dfltLockMode;	/* Default locking-mode for attached dbs */
@@ -4728,15 +4709,9 @@ collations_check_compatibility(uint32_t lhs_id, bool is_lhs_forced,
 int
 sql_binary_compare_coll_seq(Parse *parser, Expr *left, Expr *right,
 			    uint32_t *id);
-int sqlTempInMemory(const sql *);
-#ifndef SQL_OMIT_CTE
 With *sqlWithAdd(Parse *, With *, Token *, ExprList *, Select *);
 void sqlWithDelete(sql *, With *);
 void sqlWithPush(Parse *, With *, u8);
-#else
-#define sqlWithPush(x,y,z)
-#define sqlWithDelete(x,y)
-#endif
 
 /*
  * This function is called when inserting, deleting or updating a
@@ -4839,21 +4814,6 @@ int sqlExprCheckHeight(Parse *, int);
 
 #ifdef SQL_DEBUG
 void sqlParserTrace(FILE *, char *);
-#endif
-
-/*
- * If the sql_ENABLE IOTRACE exists then the global variable
- * sqlIoTrace is a pointer to a printf-like routine used to
- * print I/O tracing messages.
- */
-#ifdef SQL_ENABLE_IOTRACE
-#define IOTRACE(A)  if( sqlIoTrace ){ sqlIoTrace A; }
-void sqlVdbeIOTraceSql(Vdbe *);
- SQL_EXTERN void (SQL_CDECL * sqlIoTrace) (const char *,
-							       ...);
-#else
-#define IOTRACE(A)
-#define sqlVdbeIOTraceSql(X)
 #endif
 
 /*

@@ -39,8 +39,6 @@
 #include "sqlInt.h"
 #include "vdbeInt.h"
 
-#ifndef SQL_OMIT_TRACE
-
 /*
  * zSql is a zero-terminated string of UTF-8 SQL text.  Return the number of
  * bytes in this text up to but excluding the first character in
@@ -211,4 +209,3 @@ sqlVdbeExpandSql(Vdbe * p,	/* The prepared statement being evaluated */
 	return sqlStrAccumFinish(&out);
 }
 
-#endif				/* #ifndef SQL_OMIT_TRACE */

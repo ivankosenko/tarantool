@@ -66,7 +66,6 @@ vdbeSafetyNotNull(Vdbe * p)
 	}
 }
 
-#ifndef SQL_OMIT_TRACE
 /*
  * Invoke the profile callback.  This routine is only called if we already
  * know that the profile callback is defined and needs to be invoked.
@@ -98,9 +97,6 @@ invokeProfileCallback(sql * db, Vdbe * p)
  */
 #define checkProfileCallback(DB,P) \
    if( ((P)->startTime)>0 ){ invokeProfileCallback(DB,P); }
-#else
-#define checkProfileCallback(DB,P)	/*no-op */
-#endif
 
 /*
  * The following routine destroys a virtual machine that is created by
@@ -545,14 +541,12 @@ sqlStep(Vdbe * p)
 			db->u1.isInterrupted = 0;
 		}
 
-#ifndef SQL_OMIT_TRACE
 		if ((db->xProfile || (db->mTrace & SQL_TRACE_PROFILE) != 0)
 		    && !db->init.busy && p->zSql) {
 			sqlOsCurrentTimeInt64(db->pVfs, &p->startTime);
 		} else {
 			assert(p->startTime == 0);
 		}
-#endif
 
 		db->nVdbeActive++;
 		p->pc = 0;
@@ -565,11 +559,9 @@ sqlStep(Vdbe * p)
 		db->nVdbeExec--;
 	}
 
-#ifndef SQL_OMIT_TRACE
 	/* If the statement completed successfully, invoke the profile callback */
 	if (rc != SQL_ROW)
 		checkProfileCallback(db, p);
-#endif
 
 	db->errCode = rc;
 	if (SQL_NOMEM == sqlApiExit(p->db, p->rc)) {
@@ -1574,9 +1566,6 @@ sql_sql(sql_stmt * pStmt)
 char *
 sql_expanded_sql(sql_stmt * pStmt)
 {
-#ifdef SQL_OMIT_TRACE
-	return 0;
-#else
 	char *z = 0;
 	const char *zSql = sql_sql(pStmt);
 	if (zSql) {
@@ -1584,7 +1573,6 @@ sql_expanded_sql(sql_stmt * pStmt)
 		z = sqlVdbeExpandSql(p, zSql);
 	}
 	return z;
-#endif
 }
 
 #ifdef SQL_ENABLE_STMT_SCANSTATUS

@@ -1029,7 +1029,7 @@ expr(A) ::= expr(A) COLLATE id(C). {
   A.pExpr = sqlExprAddCollateToken(pParse, A.pExpr, &C, 1);
   A.zEnd = &C.z[C.n];
 }
-%ifndef SQL_OMIT_CAST
+
 expr(A) ::= CAST(X) LP expr(E) AS typedef(T) RP(Y). {
   spanSet(&A,&X,&Y); /*A-overwrites-X*/
   A.pExpr = sql_expr_new_dequoted(pParse->db, TK_CAST, NULL);
@@ -1040,7 +1040,6 @@ expr(A) ::= CAST(X) LP expr(E) AS typedef(T) RP(Y). {
   A.pExpr->type = T.type;
   sqlExprAttachSubtrees(pParse->db, A.pExpr, E.pExpr, 0);
 }
-%endif  SQL_OMIT_CAST
 
 expr(A) ::= TRIM(X) LP trim_operands(Y) RP(E). {
   A.pExpr = sqlExprFunction(pParse, Y, &X);
@@ -1714,7 +1713,6 @@ cmd ::= ALTER TABLE fullname(X) DROP CONSTRAINT nm(Z). {
 %destructor wqlist {sqlWithDelete(pParse->db, $$);}
 
 with(A) ::= . {A = 0;}
-%ifndef SQL_OMIT_CTE
 with(A) ::= WITH wqlist(W).              { A = W; }
 with(A) ::= WITH RECURSIVE wqlist(W).    { A = W; }
 
@@ -1724,7 +1722,6 @@ wqlist(A) ::= nm(X) eidlist_opt(Y) AS LP select(Z) RP. {
 wqlist(A) ::= wqlist(A) COMMA nm(X) eidlist_opt(Y) AS LP select(Z) RP. {
   A = sqlWithAdd(pParse, A, &X, Y, Z);
 }
-%endif  SQL_OMIT_CTE
 
 ////////////////////////////// TYPE DECLARATION ///////////////////////////////
 %type typedef {struct type_def}

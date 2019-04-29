@@ -268,9 +268,7 @@ void sqlVdbeSwap(Vdbe *, Vdbe *);
 VdbeOp *sqlVdbeTakeOpArray(Vdbe *, int *, int *);
 sql_value *sqlVdbeGetBoundValue(Vdbe *, int, u8);
 void sqlVdbeSetVarmask(Vdbe *, int);
-#ifndef SQL_OMIT_TRACE
 char *sqlVdbeExpandSql(Vdbe *, const char *);
-#endif
 int sqlMemCompare(const Mem *, const Mem *, const struct coll *);
 
 /**
