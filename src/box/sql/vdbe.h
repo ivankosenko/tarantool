@@ -349,11 +349,4 @@ void sqlVdbeSetLineNumber(Vdbe *, int);
 #define VdbeCoverageNeverTaken(v)
 #define VDBE_OFFSET_LINENO(x) 0
 #endif
-
-#ifdef SQL_ENABLE_STMT_SCANSTATUS
-void sqlVdbeScanStatus(Vdbe *, int, int, int, LogEst, const char *);
-#else
-#define sqlVdbeScanStatus(a,b,c,d,e)
-#endif
-
 #endif				/* SQL_VDBE_H */

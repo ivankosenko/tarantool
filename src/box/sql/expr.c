@@ -3965,12 +3965,6 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			assert(!ExprHasProperty(pExpr, EP_IntValue));
 			zId = pExpr->u.zToken;
 			pDef = sqlFindFunction(db, zId, nFarg, 0);
-#ifdef SQL_ENABLE_UNKNOWN_SQL_FUNCTION
-			if (pDef == 0 && pParse->explain) {
-				pDef =
-				    sqlFindFunction(db, "unknown", nFarg, 0);
-			}
-#endif
 			if (pDef == 0 || pDef->xFinalize != 0) {
 				diag_set(ClientError, ER_NO_SUCH_FUNCTION,
 					 zId);

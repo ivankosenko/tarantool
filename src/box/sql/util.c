@@ -1337,8 +1337,7 @@ sqlLogEstToInt(LogEst x)
 		n -= 2;
 	else if (n >= 1)
 		n -= 1;
-#if defined(SQL_ENABLE_STMT_SCANSTATUS) || \
-    defined(SQL_EXPLAIN_ESTIMATED_ROWS)
+#if defined(SQL_EXPLAIN_ESTIMATED_ROWS)
 	if (x > 60)
 		return (u64) LARGEST_INT64;
 #else

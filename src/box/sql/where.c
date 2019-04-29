@@ -4678,10 +4678,7 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 	 */
 	notReady = ~(Bitmask) 0;
 	for (ii = 0; ii < nTabList; ii++) {
-		int addrExplain;
-		int wsFlags;
 		pLevel = &pWInfo->a[ii];
-		wsFlags = pLevel->pWLoop->wsFlags;
 #ifndef SQL_OMIT_AUTOMATIC_INDEX
 		if ((pLevel->pWLoop->wsFlags & WHERE_AUTO_INDEX) != 0) {
 			constructAutomaticIndex(pParse, &pWInfo->sWC,
@@ -4691,17 +4688,11 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 				goto whereBeginError;
 		}
 #endif
-		addrExplain =
-		    sqlWhereExplainOneScan(pParse, pTabList, pLevel, ii,
+		sqlWhereExplainOneScan(pParse, pTabList, pLevel, ii,
 					       pLevel->iFrom, wctrlFlags);
 		pLevel->addrBody = sqlVdbeCurrentAddr(v);
 		notReady = sqlWhereCodeOneLoopStart(pWInfo, ii, notReady);
 		pWInfo->iContinue = pLevel->addrCont;
-		if ((wsFlags & WHERE_MULTI_OR) == 0
-		    && (wctrlFlags & WHERE_OR_SUBCLAUSE) == 0) {
-			sqlWhereAddScanStatus(v, pTabList, pLevel,
-						  addrExplain);
-		}
 	}
 
 	/* Done. */

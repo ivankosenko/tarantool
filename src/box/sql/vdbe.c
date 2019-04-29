@@ -705,9 +705,6 @@ int sqlVdbeExec(Vdbe *p)
 		start = sqlHwtime();
 #endif
 		nVmStep++;
-#ifdef SQL_ENABLE_STMT_SCANSTATUS
-		if (p->anExec) p->anExec[(int)(pOp-aOp)]++;
-#endif
 
 		/* Only allow tracing if SQL_DEBUG is defined.
 		 */
@@ -4954,9 +4951,6 @@ case OP_Program: {        /* jump */
 		pFrame->aOp = p->aOp;
 		pFrame->nOp = p->nOp;
 		pFrame->token = pProgram->token;
-#ifdef SQL_ENABLE_STMT_SCANSTATUS
-		pFrame->anExec = p->anExec;
-#endif
 
 		pEnd = &VdbeFrameMem(pFrame)[pFrame->nChildMem];
 		for(pMem=VdbeFrameMem(pFrame); pMem!=pEnd; pMem++) {
@@ -4986,9 +4980,6 @@ case OP_Program: {        /* jump */
 	p->apCsr = (VdbeCursor **)&aMem[p->nMem];
 	p->aOp = aOp = pProgram->aOp;
 	p->nOp = pProgram->nOp;
-#ifdef SQL_ENABLE_STMT_SCANSTATUS
-	p->anExec = 0;
-#endif
 	pOp = &aOp[-1];
 
 	break;

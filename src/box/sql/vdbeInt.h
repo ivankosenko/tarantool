@@ -446,11 +446,6 @@ struct Vdbe {
 	AuxData *pAuxData;	/* Linked list of auxdata allocations */
 	/* Anonymous savepoint for aborts only */
 	Savepoint *anonymous_savepoint;
-#ifdef SQL_ENABLE_STMT_SCANSTATUS
-	i64 *anExec;		/* Number of times each op has been executed */
-	int nScan;		/* Entries in aScan[] */
-	ScanStatus *aScan;	/* Scan definitions for sql_stmt_scanstatus() */
-#endif
 };
 
 /*

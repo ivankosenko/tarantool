@@ -743,33 +743,6 @@ sqlVdbeTakeOpArray(Vdbe * p, int *pnOp, int *pnMaxArg)
 	return aOp;
 }
 
-#if defined(SQL_ENABLE_STMT_SCANSTATUS)
-/*
- * Add an entry to the array of counters managed by sql_stmt_scanstatus().
- */
-void
-sqlVdbeScanStatus(Vdbe * p,			/* VM to add scanstatus() to */
-		      int addrExplain,		/* Address of OP_Explain (or 0) */
-		      int addrLoop,		/* Address of loop counter */
-		      int addrVisit,		/* Address of rows visited counter */
-		      LogEst nEst,		/* Estimated number of output rows */
-		      const char *zName)	/* Name of table or index being scanned */
-{
-	int nByte = (p->nScan + 1) * sizeof(ScanStatus);
-	ScanStatus *aNew;
-	aNew = (ScanStatus *) sqlDbRealloc(p->db, p->aScan, nByte);
-	if (aNew) {
-		ScanStatus *pNew = &aNew[p->nScan++];
-		pNew->addrExplain = addrExplain;
-		pNew->addrLoop = addrLoop;
-		pNew->addrVisit = addrVisit;
-		pNew->nEst = nEst;
-		pNew->zName = sqlDbStrDup(p->db, zName);
-		p->aScan = aNew;
-	}
-}
-#endif
-
 /*
  * Change the value of the opcode, or P1, P2, P3, or P5 operands
  * for a specific instruction.
@@ -1921,9 +1894,6 @@ sqlVdbeMakeReady(Vdbe * p,	/* The VDBE */
 		p->apArg = allocSpace(&x, p->apArg, nArg * sizeof(Mem *));
 		p->apCsr =
 		    allocSpace(&x, p->apCsr, nCursor * sizeof(VdbeCursor *));
-#ifdef SQL_ENABLE_STMT_SCANSTATUS
-		p->anExec = allocSpace(&x, p->anExec, p->nOp * sizeof(i64));
-#endif
 		if (x.nNeeded == 0)
 			break;
 		x.pSpace = p->pFree = sqlDbMallocRawNN(db, x.nNeeded);
@@ -1944,9 +1914,6 @@ sqlVdbeMakeReady(Vdbe * p,	/* The VDBE */
 		p->nMem = nMem;
 		initMemArray(p->aMem, nMem, db, MEM_Undefined);
 		memset(p->apCsr, 0, nCursor * sizeof(VdbeCursor *));
-#ifdef SQL_ENABLE_STMT_SCANSTATUS
-		memset(p->anExec, 0, p->nOp * sizeof(i64));
-#endif
 	}
 	sqlVdbeRewind(p);
 }
@@ -2002,9 +1969,6 @@ sqlVdbeFrameRestore(VdbeFrame * pFrame)
 {
 	Vdbe *v = pFrame->v;
 	closeCursorsInFrame(v);
-#ifdef SQL_ENABLE_STMT_SCANSTATUS
-	v->anExec = pFrame->anExec;
-#endif
 	v->aOp = pFrame->aOp;
 	v->nOp = pFrame->nOp;
 	v->aMem = pFrame->aMem;
@@ -2689,15 +2653,6 @@ sqlVdbeClearObject(sql * db, Vdbe * p)
 	vdbeFreeOpArray(db, p->aOp, p->nOp);
 	sqlDbFree(db, p->aColName);
 	sqlDbFree(db, p->zSql);
-#ifdef SQL_ENABLE_STMT_SCANSTATUS
-	{
-		int i;
-		for (i = 0; i < p->nScan; i++) {
-			sqlDbFree(db, p->aScan[i].zName);
-		}
-		sqlDbFree(db, p->aScan);
-	}
-#endif
 }
 
 /*

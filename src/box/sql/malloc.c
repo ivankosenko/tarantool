@@ -128,16 +128,12 @@ sql_sized_realloc(void *pPrior, int nByte)
 int
 sql_release_memory(int n)
 {
-#ifdef SQL_ENABLE_MEMORY_MANAGEMENT
-	return sqlPcacheReleaseMemory(n);
-#else
 	/* IMPLEMENTATION-OF: R-34391-24921 The sql_release_memory() routine
 	 * is a no-op returning zero if sql is not compiled with
 	 * SQL_ENABLE_MEMORY_MANAGEMENT.
 	 */
 	UNUSED_PARAMETER(n);
 	return 0;
-#endif
 }
 
 /*
@@ -297,12 +293,6 @@ mallocWithAlarm(int n, void **pp)
 		}
 	}
 	p = sql_sized_malloc(nFull);
-#ifdef SQL_ENABLE_MEMORY_MANAGEMENT
-	if (p == 0 && mem0.alarmThreshold > 0) {
-		sqlMallocAlarm(nFull);
-		p = sql_sized_malloc(nFull);
-	}
-#endif
 	if (p) {
 		nFull = sqlMallocSize(p);
 		sqlStatusUp(SQL_STATUS_MEMORY_USED, nFull);
