@@ -533,7 +533,6 @@ static const int aHardLimit[] = {
 	SQL_MAX_ATTACHED,
 	SQL_MAX_LIKE_PATTERN_LENGTH,
 	SQL_MAX_TRIGGER_DEPTH,
-	SQL_MAX_WORKER_THREADS,
 };
 
 /*
@@ -568,9 +567,6 @@ static const int aHardLimit[] = {
 #endif
 #if SQL_MAX_TRIGGER_DEPTH<1
 #error SQL_MAX_TRIGGER_DEPTH must be at least 1
-#endif
-#if SQL_MAX_WORKER_THREADS<0 || SQL_MAX_WORKER_THREADS>50
-#error SQL_MAX_WORKER_THREADS must be between 0 and 50
 #endif
 
 /*
@@ -607,9 +603,6 @@ sql_limit(sql * db, int limitId, int newLimit)
 	       SQL_MAX_LIKE_PATTERN_LENGTH);
 	assert(aHardLimit[SQL_LIMIT_TRIGGER_DEPTH] ==
 	       SQL_MAX_TRIGGER_DEPTH);
-	assert(aHardLimit[SQL_LIMIT_WORKER_THREADS] ==
-	       SQL_MAX_WORKER_THREADS);
-	assert(SQL_LIMIT_WORKER_THREADS == (SQL_N_LIMIT - 1));
 
 	if (limitId < 0 || limitId >= SQL_N_LIMIT) {
 		return -1;
@@ -652,7 +645,6 @@ sql_init_db(sql **out_db)
 
 	assert(sizeof(db->aLimit) == sizeof(aHardLimit));
 	memcpy(db->aLimit, aHardLimit, sizeof(db->aLimit));
-	db->aLimit[SQL_LIMIT_WORKER_THREADS] = SQL_DEFAULT_WORKER_THREADS;
 	db->aLimit[SQL_LIMIT_COMPOUND_SELECT] = SQL_DEFAULT_COMPOUND_SELECT;
 	db->szMmap = sqlGlobalConfig.szMmap;
 	db->nMaxSorterMmap = 0x7FFFFFFF;

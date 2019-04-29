@@ -10,9 +10,6 @@ set(SQL_BIN_DIR ${CMAKE_BINARY_DIR}/src/box/sql)
 include_directories(${SQL_SRC_DIR})
 include_directories(${SQL_BIN_DIR})
 
-add_definitions(-DSQL_MAX_WORKER_THREADS=0)
-add_definitions(-DSQL_OMIT_AUTOMATIC_INDEX)
-
 set(TEST_DEFINITIONS
     SQL_NO_SYNC=1
     SQL_TEST=1

@@ -341,7 +341,6 @@ struct sql_vfs {
 #define SQL_LIMIT_ATTACHED                  7
 #define SQL_LIMIT_LIKE_PATTERN_LENGTH       8
 #define SQL_LIMIT_TRIGGER_DEPTH             9
-#define SQL_LIMIT_WORKER_THREADS           10
 
 enum sql_ret_code {
 	/** Result of a routine is ok. */
@@ -945,17 +944,6 @@ sql_bind_parameter_lindex(sql_stmt * pStmt, const char *zName,
 #define SQL_DEFAULT_RECURSIVE_TRIGGERS 0
 #endif
 
-#ifndef SQL_MAX_WORKER_THREADS
-#define SQL_MAX_WORKER_THREADS 8
-#endif
-#ifndef SQL_DEFAULT_WORKER_THREADS
-#define SQL_DEFAULT_WORKER_THREADS 0
-#endif
-#if SQL_DEFAULT_WORKER_THREADS>SQL_MAX_WORKER_THREADS
-#undef SQL_MAX_WORKER_THREADS
-#define SQL_MAX_WORKER_THREADS SQL_DEFAULT_WORKER_THREADS
-#endif
-
 /**
  * Default count of allowed compound selects.
  *
@@ -1296,7 +1284,7 @@ typedef int VList;
  * The number of different kinds of things that can be limited
  * using the sql_limit() interface.
  */
-#define SQL_N_LIMIT (SQL_LIMIT_WORKER_THREADS+1)
+#define SQL_N_LIMIT (SQL_LIMIT_TRIGGER_DEPTH+1)
 
 /*
  * Lookaside malloc is a set of fixed-size buffers that can be used
@@ -4858,13 +4846,6 @@ int sqlMemdebugNoType(void *, u8);
 #define MEMTYPE_SCRATCH    0x04	/* Scratch allocations */
 #define MEMTYPE_PCACHE     0x08	/* Page cache allocations */
 
-/*
- * Threading interface
- */
-#if SQL_MAX_WORKER_THREADS>0
-int sqlThreadCreate(sqlThread **, void *(*)(void *), void *);
-int sqlThreadJoin(sqlThread *, void **);
-#endif
 
 int sqlExprVectorSize(Expr * pExpr);
 int sqlExprIsVector(Expr * pExpr);

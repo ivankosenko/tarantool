@@ -2570,20 +2570,6 @@ sqlFindInIndex(Parse * pParse,	/* Parsing context */
 						parts[0].sort_order;
 
 					if (prRhsHasNull) {
-#ifdef SQL_ENABLE_COLUMN_USED_MASK
-							i64 mask =
-							    (1 << nExpr) - 1;
-							sqlVdbeAddOp4Dup8(v,
-									      OP_ColumnsUsed,
-									      iTab,
-									      0,
-									      0,
-									      (u8
-									       *)
-									      &
-									      mask,
-									      P4_INT64);
-#endif
 						*prRhsHasNull = ++pParse->nMem;
 						if (nExpr == 1) {
 							/* Tarantool: Check for null is performed on first key of the index.  */

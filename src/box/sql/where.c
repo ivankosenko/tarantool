@@ -684,225 +684,6 @@ translateColumnToCopy(Vdbe * v,		/* The VDBE containing code to translate */
 	}
 }
 
-#ifndef SQL_OMIT_AUTOMATIC_INDEX
-/*
- * Return TRUE if the WHERE clause term pTerm is of a form where it
- * could be used with an index to access pSrc, assuming an appropriate
- * index existed.
- */
-static int
-termCanDriveIndex(WhereTerm * pTerm,	/* WHERE clause term to check */
-		  struct SrcList_item *pSrc,	/* Table we are trying to access */
-		  Bitmask notReady	/* Tables in outer loops of the join */
-    )
-{
-	if (pTerm->leftCursor != pSrc->iCursor)
-		return 0;
-	if ((pTerm->eOperator & WO_EQ) == 0)
-		return 0;
-	if ((pTerm->prereqRight & notReady) != 0)
-		return 0;
-	if (pTerm->u.leftColumn < 0)
-		return 0;
-	enum field_type type = pSrc->pTab->def->fields[pTerm->u.leftColumn].type;
-	enum field_type expr_type = expr_cmp_mutual_type(pTerm->pExpr);
-	if (!field_type1_contains_type2(expr_type, type))
-		return 0;
-	return 1;
-}
-#endif
-
-#ifndef SQL_OMIT_AUTOMATIC_INDEX
-/*
- * Generate code to construct the Index object for an automatic index
- * and to set up the WhereLevel object pLevel so that the code generator
- * makes use of the automatic index.
- */
-static void
-constructAutomaticIndex(Parse * pParse,			/* The parsing context */
-			WhereClause * pWC,		/* The WHERE clause */
-			struct SrcList_item *pSrc,	/* The FROM clause term to get the next index */
-			Bitmask notReady,		/* Mask of cursors that are not available */
-			WhereLevel * pLevel)		/* Write new index here */
-{
-	int nKeyCol;		/* Number of columns in the constructed index */
-	WhereTerm *pTerm;	/* A single term of the WHERE clause */
-	WhereTerm *pWCEnd;	/* End of pWC->a[] */
-	Index *pIdx;		/* Object describing the transient index */
-	Vdbe *v;		/* Prepared statement under construction */
-	int addrInit;		/* Address of the initialization bypass jump */
-	Table *pTable;		/* The table being indexed */
-	int addrTop;		/* Top of the index fill loop */
-	int regRecord;		/* Register holding an index record */
-	int n;			/* Column counter */
-	int i;			/* Loop counter */
-	int mxBitCol;		/* Maximum column in pSrc->colUsed */
-	struct coll *pColl;		/* Collating sequence to on a column */
-	WhereLoop *pLoop;	/* The Loop object */
-	char *zNotUsed;		/* Extra space on the end of pIdx */
-	Bitmask idxCols;	/* Bitmap of columns used for indexing */
-	Bitmask extraCols;	/* Bitmap of additional columns */
-	u8 sentWarning = 0;	/* True if a warnning has been issued */
-	int iContinue = 0;	/* Jump here to skip excluded rows */
-	struct SrcList_item *pTabItem;	/* FROM clause term being indexed */
-	int addrCounter = 0;	/* Address where integer counter is initialized */
-	int regBase;		/* Array of registers where record is assembled */
-
-	/* Generate code to skip over the creation and initialization of the
-	 * transient index on 2nd and subsequent iterations of the loop.
-	 */
-	v = pParse->pVdbe;
-	assert(v != 0);
-	addrInit = sqlVdbeAddOp0(v, OP_Once);
-	VdbeCoverage(v);
-
-	/* Count the number of columns that will be added to the index
-	 * and used to match WHERE clause constraints
-	 */
-	nKeyCol = 0;
-	pTable = pSrc->pTab;
-	pWCEnd = &pWC->a[pWC->nTerm];
-	pLoop = pLevel->pWLoop;
-	idxCols = 0;
-	for (pTerm = pWC->a; pTerm < pWCEnd; pTerm++) {
-		if (termCanDriveIndex(pTerm, pSrc, notReady)) {
-			int iCol = pTerm->u.leftColumn;
-			Bitmask cMask =
-			    iCol >= BMS ? MASKBIT(BMS - 1) : MASKBIT(iCol);
-			testcase(iCol == BMS);
-			testcase(iCol == BMS - 1);
-			if (!sentWarning) {
-				sql_log(SQL_WARNING_AUTOINDEX,
-					    "automatic index on %s(%s)",
-					    pTable->def->name,
-					    pTable->aCol[iCol].zName);
-				sentWarning = 1;
-			}
-			if ((idxCols & cMask) == 0) {
-				if (whereLoopResize
-				    (pParse->db, pLoop, nKeyCol + 1)) {
-					goto end_auto_index_create;
-				}
-				pLoop->aLTerm[nKeyCol++] = pTerm;
-				idxCols |= cMask;
-			}
-		}
-	}
-	assert(nKeyCol > 0);
-	pLoop->nEq = pLoop->nLTerm = nKeyCol;
-	pLoop->wsFlags = WHERE_COLUMN_EQ | WHERE_IDX_ONLY | WHERE_INDEXED
-	    | WHERE_AUTO_INDEX;
-
-	/* Count the number of additional columns needed to create a
-	 * covering index.  A "covering index" is an index that contains all
-	 * columns that are needed by the query.  With a covering index, the
-	 * original table never needs to be accessed.  Automatic indices must
-	 * be a covering index because the index will not be updated if the
-	 * original table changes and the index and table cannot both be used
-	 * if they go out of sync.
-	 */
-	extraCols = pSrc->colUsed & (~idxCols | MASKBIT(BMS - 1));
-	mxBitCol = MIN(BMS - 1, pTable->def->field_count);
-	testcase(pTable->def->field_count == BMS - 1);
-	testcase(pTable->def->field_count == BMS - 2);
-	for (i = 0; i < mxBitCol; i++) {
-		if (extraCols & MASKBIT(i))
-			nKeyCol++;
-	}
-	if (pSrc->colUsed & MASKBIT(BMS - 1)) {
-		nKeyCol += pTable->def->field_count - BMS + 1;
-	}
-
-	/* Construct the Index object to describe this index */
-	pIdx = sqlDbMallocZero(pParse->db, sizeof(*pIdx));
-	if (pIdx == 0)
-		goto end_auto_index_create;
-	pLoop->pIndex = pIdx;
-	pIdx->zName = "auto-index";
-	pIdx->pTable = pTable;
-	n = 0;
-	idxCols = 0;
-	for (pTerm = pWC->a; pTerm < pWCEnd; pTerm++) {
-		if (termCanDriveIndex(pTerm, pSrc, notReady)) {
-			int iCol = pTerm->u.leftColumn;
-			Bitmask cMask =
-			    iCol >= BMS ? MASKBIT(BMS - 1) : MASKBIT(iCol);
-			testcase(iCol == BMS - 1);
-			testcase(iCol == BMS);
-			if ((idxCols & cMask) == 0) {
-				Expr *pX = pTerm->pExpr;
-				idxCols |= cMask;
-				pIdx->aiColumn[n] = pTerm->u.leftColumn;
-				n++;
-			}
-		}
-	}
-	assert((u32) n == pLoop->nEq);
-
-	/* Add additional columns needed to make the automatic index into
-	 * a covering index
-	 */
-	for (i = 0; i < mxBitCol; i++) {
-		if (extraCols & MASKBIT(i)) {
-			pIdx->aiColumn[n] = i;
-			n++;
-		}
-	}
-	if (pSrc->colUsed & MASKBIT(BMS - 1)) {
-		for (i = BMS - 1; i < (int)pTable->def->field_count; i++) {
-			pIdx->aiColumn[n] = i;
-			n++;
-		}
-	}
-	assert(n == nKeyCol);
-	pIdx->aiColumn[n] = XN_ROWID;
-
-	/* Create the automatic index */
-	assert(pLevel->iIdxCur >= 0);
-	pLevel->iIdxCur = pParse->nTab++;
-	sqlVdbeAddOp2(v, OP_OpenAutoindex, pLevel->iIdxCur, nKeyCol + 1);
-	sql_vdbe_set_p4_key_def(pParse, pIdx->key_def);
-	VdbeComment((v, "for %s", pTable->def->name));
-
-	/* Fill the automatic index with content */
-	sqlExprCachePush(pParse);
-	pTabItem = &pWC->pWInfo->pTabList->a[pLevel->iFrom];
-	if (pTabItem->fg.viaCoroutine) {
-		int regYield = pTabItem->regReturn;
-		addrCounter = sqlVdbeAddOp2(v, OP_Integer, 0, 0);
-		sqlVdbeAddOp3(v, OP_InitCoroutine, regYield, 0,
-				  pTabItem->addrFillSub);
-		addrTop = sqlVdbeAddOp1(v, OP_Yield, regYield);
-		VdbeCoverage(v);
-		VdbeComment((v, "next row of \"%s\"", pTabItem->pTab->zName));
-	} else {
-		addrTop = sqlVdbeAddOp1(v, OP_Rewind, pLevel->iTabCur);
-		VdbeCoverage(v);
-	}
-	regRecord = sqlGetTempReg(pParse);
-	regBase = sql_generate_index_key(pParse, pIdx, pLevel->iTabCur,
-					 regRecord, NULL, 0);
-	sqlVdbeAddOp2(v, OP_IdxInsert, pLevel->iIdxCur, regRecord);
-	if (pTabItem->fg.viaCoroutine) {
-		sqlVdbeChangeP2(v, addrCounter, regBase + n);
-		translateColumnToCopy(v, addrTop, pLevel->iTabCur,
-				      pTabItem->regResult, 1);
-		sqlVdbeGoto(v, addrTop);
-		pTabItem->fg.viaCoroutine = 0;
-	} else {
-		sqlVdbeAddOp2(v, OP_Next, pLevel->iTabCur, addrTop + 1);
-		VdbeCoverage(v);
-	}
-	sqlVdbeChangeP5(v, SQL_STMTSTATUS_AUTOINDEX);
-	sqlVdbeJumpHere(v, addrTop);
-	sqlReleaseTempReg(pParse, regRecord);
-	sqlExprCachePop(pParse);
-
-	/* Jump here when skipping the initialization */
-	sqlVdbeJumpHere(v, addrInit);
-}
-#endif				/* SQL_OMIT_AUTOMATIC_INDEX */
-
 /*
  * Estimate the location of a particular key among all keys in an
  * index.  Store the results in aStat as follows:
@@ -2828,61 +2609,6 @@ tnt_error:
 		probe = fake_index;
 	}
 
-#ifndef SQL_OMIT_AUTOMATIC_INDEX
-	/* Automatic indexes */
-	LogEst rSize = pTab->nRowLogEst;
-	LogEst rLogSize = estLog(rSize);
-	struct session *user_session = current_session();
-	if (!pBuilder->pOrSet	/* Not part of an OR optimization */
-	    && (pWInfo->wctrlFlags & WHERE_OR_SUBCLAUSE) == 0 && (user_session->sql_flags & SQL_AutoIndex) != 0 && pSrc->pIBIndex == 0	/* Has no INDEXED BY clause */
-	    && !pSrc->fg.notIndexed	/* Has no NOT INDEXED clause */
-	    && HasRowid(pTab)	/* Not WITHOUT ROWID table. (FIXME: Why not?) */
-	    &&!pSrc->fg.isCorrelated	/* Not a correlated subquery */
-	    && !pSrc->fg.isRecursive	/* Not a recursive common table expression. */
-	    ) {
-		/* Generate auto-index WhereLoops */
-		WhereTerm *pTerm;
-		WhereTerm *pWCEnd = pWC->a + pWC->nTerm;
-		for (pTerm = pWC->a; rc == SQL_OK && pTerm < pWCEnd; pTerm++) {
-			if (pTerm->prereqRight & pNew->maskSelf)
-				continue;
-			if (termCanDriveIndex(pTerm, pSrc, 0)) {
-				pNew->nEq = 1;
-				pNew->nSkip = 0;
-				pNew->pIndex = 0;
-				pNew->nLTerm = 1;
-				pNew->aLTerm[0] = pTerm;
-				/* TUNING: One-time cost for computing the automatic index is
-				 * estimated to be X*N*log2(N) where N is the number of rows in
-				 * the table being indexed and where X is 7 (LogEst=28) for normal
-				 * tables or 1.375 (LogEst=4) for views and subqueries.  The value
-				 * of X is smaller for views and subqueries so that the query planner
-				 * will be more aggressive about generating automatic indexes for
-				 * those objects, since there is no opportunity to add schema
-				 * indexes on subqueries and views.
-				 */
-				pNew->rSetup = rLogSize + rSize + 4;
-				if (!pTab->def->opts.is_view &&
-				    pTab->def->id == 0)
-					pNew->rSetup += 24;
-				if (pNew->rSetup < 0)
-					pNew->rSetup = 0;
-				/* TUNING: Each index lookup yields 20 rows in the table.  This
-				 * is more than the usual guess of 10 rows, since we have no way
-				 * of knowing how selective the index will ultimately be.  It would
-				 * not be unreasonable to make this value much larger.
-				 */
-				pNew->nOut = 43;
-				assert(43 == sqlLogEst(20));
-				pNew->rRun =
-				    sqlLogEstAdd(rLogSize, pNew->nOut);
-				pNew->wsFlags = WHERE_AUTO_INDEX;
-				pNew->prereq = mPrereq | pTerm->prereqRight;
-				rc = whereLoopInsert(pBuilder, pNew);
-			}
-		}
-	}
-#endif				/* SQL_OMIT_AUTOMATIC_INDEX */
 	/*
 	 * If there was an INDEXED BY clause, then only that one
 	 * index is considered.
@@ -4561,12 +4287,6 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 			VdbeComment((v, "%s", space->def->name));
 			assert(pTabItem->iCursor == pLevel->iTabCur);
 			sqlVdbeChangeP5(v, bFordelete);
-#ifdef SQL_ENABLE_COLUMN_USED_MASK
-			sqlVdbeAddOp4Dup8(v, OP_ColumnsUsed,
-					      pTabItem->iCursor, 0, 0,
-					      (const u8 *)&pTabItem->colUsed,
-					      P4_INT64);
-#endif
 		}
 		if (pLoop->wsFlags & WHERE_INDEXED) {
 			struct index_def *idx_def = pLoop->index_def;
@@ -4641,30 +4361,6 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 					sqlVdbeChangeP5(v, OPFLAG_SEEKEQ);	/* Hint to COMDB2 */
 				}
 				VdbeComment((v, "%s", idx_def->name));
-#ifdef SQL_ENABLE_COLUMN_USED_MASK
-				{
-					u64 colUsed = 0;
-					int ii, jj;
-					for (ii = 0; ii < pIx->nColumn; ii++) {
-						jj = pIx->aiColumn[ii];
-						if (jj < 0)
-							continue;
-						if (jj > 63)
-							jj = 63;
-						if ((pTabItem->
-						     colUsed & MASKBIT(jj)) ==
-						    0)
-							continue;
-						colUsed |=
-						    ((u64) 1) << (ii <
-								  63 ? ii : 63);
-					}
-					sqlVdbeAddOp4Dup8(v, OP_ColumnsUsed,
-							      iIndexCur, 0, 0,
-							      (u8 *) & colUsed,
-							      P4_INT64);
-				}
-#endif				/* SQL_ENABLE_COLUMN_USED_MASK */
 			}
 		}
 	}
@@ -4679,15 +4375,6 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 	notReady = ~(Bitmask) 0;
 	for (ii = 0; ii < nTabList; ii++) {
 		pLevel = &pWInfo->a[ii];
-#ifndef SQL_OMIT_AUTOMATIC_INDEX
-		if ((pLevel->pWLoop->wsFlags & WHERE_AUTO_INDEX) != 0) {
-			constructAutomaticIndex(pParse, &pWInfo->sWC,
-						&pTabList->a[pLevel->iFrom],
-						notReady, pLevel);
-			if (db->mallocFailed)
-				goto whereBeginError;
-		}
-#endif
 		sqlWhereExplainOneScan(pParse, pTabList, pLevel, ii,
 					       pLevel->iFrom, wctrlFlags);
 		pLevel->addrBody = sqlVdbeCurrentAddr(v);

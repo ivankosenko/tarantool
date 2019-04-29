@@ -253,14 +253,6 @@ sqlWhereExplainOneScan(Parse * pParse,	/* Parse context */
 				       " USING INTEGER PRIMARY KEY (rowid%s?)",
 				       zRangeOp);
 		}
-#ifdef SQL_EXPLAIN_ESTIMATED_ROWS
-		if (pLoop->nOut >= 10) {
-			sqlXPrintf(&str, " (~%llu rows)",
-				       sqlLogEstToInt(pLoop->nOut));
-		} else {
-			sqlStrAccumAppend(&str, " (~1 row)", 9);
-		}
-#endif
 		zMsg = sqlStrAccumFinish(&str);
 		ret =
 		    sqlVdbeAddOp4(v, OP_Explain, iId, iLevel, iFrom, zMsg,

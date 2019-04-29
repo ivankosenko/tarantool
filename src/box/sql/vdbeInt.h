@@ -116,9 +116,6 @@ struct VdbeCursor {
 	const u8 *aRow;		/* Data for the current row, if all on one page */
 	u32 payloadSize;	/* Total number of bytes in the record */
 	u32 szRow;		/* Byte available in aRow */
-#ifdef SQL_ENABLE_COLUMN_USED_MASK
-	u64 maskUsed;		/* Mask of columns used by this cursor */
-#endif
 	u32 nRowField;		/* Number of fields in the current row */
 	/* Offsets for all fields in the record [nField+1]
 	 * Order of fields is the same as it was passes to create table statement
