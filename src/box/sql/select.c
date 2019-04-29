@@ -1139,7 +1139,6 @@ selectInnerLoop(Parse * pParse,		/* The parser context */
 		/* In this mode, write each query result to the key of the temporary
 		 * table iParm.
 		 */
-#ifndef SQL_OMIT_COMPOUND_SELECT
 	case SRT_Union:{
 			int r1;
 			r1 = sqlGetTempReg(pParse);
@@ -1159,7 +1158,6 @@ selectInnerLoop(Parse * pParse,		/* The parser context */
 					  nResultCol);
 			break;
 		}
-#endif				/* SQL_OMIT_COMPOUND_SELECT */
 
 		/* Store the result as data using a unique key.
 		 */
@@ -1517,7 +1515,6 @@ explainTempTable(Parse * pParse, const char *zUsage)
 	}
 }
 
-#if !defined(SQL_OMIT_COMPOUND_SELECT)
 /*
  * Unless an "EXPLAIN QUERY PLAN" command is being processed, this function
  * is a no-op. Otherwise, it adds a single row of output to the EQP result,
@@ -1555,10 +1552,6 @@ explainComposite(Parse * pParse,	/* Parse context */
 				  P4_DYNAMIC);
 	}
 }
-#else
-/* No-op versions of the explainXXX() functions and macros. */
-#define explainComposite(v,w,x,y,z)
-#endif
 
 /*
  * If the inner loop was generated using a non-null pOrderBy argument,
@@ -2188,7 +2181,6 @@ computeLimitRegisters(Parse * pParse, Select * p, int iBreak)
 	}
 }
 
-#ifndef SQL_OMIT_COMPOUND_SELECT
 /**
  * This function determines resulting collation sequence for
  * @n-th column of the result set for the compound SELECT
@@ -2981,7 +2973,6 @@ multiSelect(Parse * pParse,	/* Parsing context */
 	sql_select_delete(db, pDelete);
 	return rc;
 }
-#endif				/* SQL_OMIT_COMPOUND_SELECT */
 
 /**
  * Code an output subroutine for a coroutine implementation of a
@@ -3237,7 +3228,6 @@ generateOutputSubroutine(struct Parse *parse, struct Select *p,
  * until all data is exhausted then jump to the "end" labe.  AltB, AeqB,
  * and AgtB jump to either L2 or to one of EofA or EofB.
  */
-#ifndef SQL_OMIT_COMPOUND_SELECT
 static int
 multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 		   Select * p,		/* The right-most of SELECTs to be coded */
@@ -3573,7 +3563,6 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 	explainComposite(pParse, p->op, iSub1, iSub2, 0);
 	return pParse->is_aborted;
 }
-#endif
 
 /* Forward Declarations */
 static void substExprList(Parse *, ExprList *, int, ExprList *);
@@ -5570,7 +5559,6 @@ sqlSelect(Parse * pParse,		/* The parser context */
 	if (v == 0)
 		goto select_end;
 
-#ifndef SQL_OMIT_COMPOUND_SELECT
 	/* Handle compound SELECT statements using the separate multiSelect()
 	 * procedure.
 	 */
@@ -5591,7 +5579,6 @@ sqlSelect(Parse * pParse,		/* The parser context */
 #endif
 		return rc;
 	}
-#endif
 
 	/* Generate code for all sub-queries in the FROM clause
 	 */

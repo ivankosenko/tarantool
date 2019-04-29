@@ -61,11 +61,7 @@ struct Keyword {
 #  define AUTOINCR   0x00000010
 #endif
 #  define CAST       0x00000020
-#ifdef SQL_OMIT_COMPOUND_SELECT
-#  define COMPOUND   0
-#else
 #  define COMPOUND   0x00000040
-#endif
 #ifdef SQL_OMIT_CONFLICT_CLAUSE
 #  define CONFLICT   0
 #else

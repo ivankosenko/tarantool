@@ -1211,9 +1211,7 @@ sqlWhereCodeOneLoopStart(WhereInfo * pWInfo,	/* Complete information about the W
 		} else {
 			assert(pLevel->p5 == 0);
 		}
-	} else
-#ifndef SQL_OMIT_OR_OPTIMIZATION
-	if (pLoop->wsFlags & WHERE_MULTI_OR) {
+	} else if (pLoop->wsFlags & WHERE_MULTI_OR) {
 		/* Case 5:  Two or more separately indexed terms connected by OR
 		 *
 		 * Example:
@@ -1512,7 +1510,6 @@ sqlWhereCodeOneLoopStart(WhereInfo * pWInfo,	/* Complete information about the W
 		if (!untestedTerms)
 			disableTerm(pLevel, pTerm);
 	} else
-#endif				/* SQL_OMIT_OR_OPTIMIZATION */
 
 	{
 		/* Case 6:  There is no usable index.  We must do a complete

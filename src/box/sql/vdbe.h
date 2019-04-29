@@ -152,11 +152,7 @@ struct SubProgram {
 #define COLNAME_DATABASE 2
 #define COLNAME_TABLE    3
 #define COLNAME_COLUMN   4
-#ifdef SQL_ENABLE_COLUMN_METADATA
-#define COLNAME_N        5	/* Number of COLNAME_xxx symbols */
-#else
-#define COLNAME_N      2	/* Store the name and decltype */
-#endif
+#define COLNAME_N        2	/* Store the name and decltype */
 
 /*
  * The following macro converts a relative address in the p2 field

@@ -503,21 +503,9 @@ sqlStep(Vdbe * p)
 		 *
 		 * Nevertheless, some published applications that were originally written
 		 * for version 3.6.23 or earlier do in fact depend on SQL_MISUSE
-		 * returns, and those were broken by the automatic-reset change.  As a
-		 * a work-around, the SQL_OMIT_AUTORESET compile-time restores the
-		 * legacy behavior of returning SQL_MISUSE for cases where the
-		 * previous sql_step() returned something other than a SQL_LOCKED
-		 * or SQL_BUSY error.
+		 * returns, and those were broken by the automatic-reset change.
 		 */
-#ifdef SQL_OMIT_AUTORESET
-		if ((rc = p->rc & 0xff) == SQL_BUSY || rc == SQL_LOCKED) {
-			sql_reset((sql_stmt *) p);
-		} else {
-			return SQL_MISUSE;
-		}
-#else
 		sql_reset((sql_stmt *) p);
-#endif
 	}
 
 	/* Check that malloc() has not failed. If it has, return early. */
@@ -1101,16 +1089,6 @@ sql_column_datatype(sql_stmt *pStmt, int N)
 }
 
 /*
- * Constraint:  If you have ENABLE_COLUMN_METADATA then you must
- * not define OMIT_DECLTYPE.
- */
-#if defined(SQL_OMIT_DECLTYPE) && defined(SQL_ENABLE_COLUMN_METADATA)
-#error "Must not define both SQL_OMIT_DECLTYPE \
-         and SQL_ENABLE_COLUMN_METADATA"
-#endif
-
-#ifndef SQL_OMIT_DECLTYPE
-/*
  * Return the column declaration type (if applicable) of the 'i'th column
  * of the result set of SQL statement pStmt.
  */
@@ -1120,45 +1098,6 @@ sql_column_decltype(sql_stmt * pStmt, int N)
 	return columnName(pStmt, N, (const void *(*)(Mem *))sql_value_text,
 			  COLNAME_DECLTYPE);
 }
-#endif				/* SQL_OMIT_DECLTYPE */
-
-#ifdef SQL_ENABLE_COLUMN_METADATA
-/*
- * Return the name of the database from which a result column derives.
- * NULL is returned if the result column is an expression or constant or
- * anything else which is not an unambiguous reference to a database column.
- */
-const char *
-sql_column_database_name(sql_stmt * pStmt, int N)
-{
-	return columnName(pStmt, N, (const void *(*)(Mem *))sql_value_text,
-			  COLNAME_DATABASE);
-}
-
-/*
- * Return the name of the table from which a result column derives.
- * NULL is returned if the result column is an expression or constant or
- * anything else which is not an unambiguous reference to a database column.
- */
-const char *
-sql_column_table_name(sql_stmt * pStmt, int N)
-{
-	return columnName(pStmt, N, (const void *(*)(Mem *))sql_value_text,
-			  COLNAME_TABLE);
-}
-
-/*
- * Return the name of the table column from which a result column derives.
- * NULL is returned if the result column is an expression or constant or
- * anything else which is not an unambiguous reference to a database column.
- */
-const char *
-sql_column_origin_name(sql_stmt * pStmt, int N)
-{
-	return columnName(pStmt, N, (const void *(*)(Mem *))sql_value_text,
-			  COLNAME_COLUMN);
-}
-#endif				/* SQL_ENABLE_COLUMN_METADATA */
 
 /******************************* sql_bind_  **************************
  *
@@ -1559,9 +1498,6 @@ sql_sql(sql_stmt * pStmt)
  * bound parameters expanded.  Space to hold the returned string is
  * obtained from sql_malloc().  The caller is responsible for
  * freeing the returned string by passing it to sql_free().
- *
- * The SQL_TRACE_SIZE_LIMIT puts an upper bound on the size of
- * expanded bound parameters.
  */
 char *
 sql_expanded_sql(sql_stmt * pStmt)

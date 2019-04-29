@@ -169,14 +169,6 @@
 #endif
 
 /*
- * Powersafe overwrite is on by default.  But can be turned off using
- * the -Dsql_POWERSAFE_OVERWRITE=0 command-line option.
- */
-#ifndef SQL_POWERSAFE_OVERWRITE
-#define SQL_POWERSAFE_OVERWRITE 1
-#endif
-
-/*
  * EVIDENCE-OF: R-25715-37072 Memory allocation statistics are enabled by
  * default unless sql is compiled with sql_DEFAULT_MEMSTATUS=0 in
  * which case memory allocation statistics are disabled by default.
@@ -1293,11 +1285,9 @@ struct sql {
 		double notUsed1;	/* Spacer */
 	} u1;
 	Lookaside lookaside;	/* Lookaside malloc configuration */
-#ifndef SQL_OMIT_PROGRESS_CALLBACK
 	int (*xProgress) (void *);	/* The progress callback */
 	void *pProgressArg;	/* Argument to the progress callback */
 	unsigned nProgressOps;	/* Number of opcodes for progress callback */
-#endif
 	Hash aFunc;		/* Hash table of connection functions */
 	int *pnBytesFreed;	/* If not NULL, increment this in DbFree() */
 };

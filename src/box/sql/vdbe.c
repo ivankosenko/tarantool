@@ -631,9 +631,7 @@ int sqlVdbeExec(Vdbe *p)
 	sql *db = p->db;       /* The database */
 	int iCompare = 0;          /* Result of last comparison */
 	unsigned nVmStep = 0;      /* Number of virtual machine steps */
-#ifndef SQL_OMIT_PROGRESS_CALLBACK
 	unsigned nProgressLimit = 0;/* Invoke xProgress() when nVmStep reaches this */
-#endif
 	Mem *aMem = p->aMem;       /* Copy of p->aMem */
 	Mem *pIn1 = 0;             /* 1st input operand */
 	Mem *pIn2 = 0;             /* 2nd input operand */
@@ -659,13 +657,13 @@ int sqlVdbeExec(Vdbe *p)
 	assert(p->explain==0);
 	p->pResultSet = 0;
 	if (db->u1.isInterrupted) goto abort_due_to_interrupt;
-#ifndef SQL_OMIT_PROGRESS_CALLBACK
+
 	if (db->xProgress) {
 		u32 iPrior = p->aCounter[SQL_STMTSTATUS_VM_STEP];
 		assert(0 < db->nProgressOps);
 		nProgressLimit = db->nProgressOps - (iPrior % db->nProgressOps);
 	}
-#endif
+
 #ifdef SQL_DEBUG
 	sqlBeginBenignMalloc();
 	if (p->pc==0
@@ -822,7 +820,7 @@ case OP_Goto: {             /* jump */
 	 */
 			check_for_interrupt:
 	if (db->u1.isInterrupted) goto abort_due_to_interrupt;
-#ifndef SQL_OMIT_PROGRESS_CALLBACK
+
 	/* Call the progress callback if it is configured and the required number
 	 * of VDBE ops have been executed (either since this invocation of
 	 * sqlVdbeExec() or since last time the progress callback was called).
@@ -837,7 +835,6 @@ case OP_Goto: {             /* jump */
 			goto abort_due_to_error;
 		}
 	}
-#endif
 
 	break;
 }
@@ -1401,7 +1398,6 @@ case OP_ResultRow: {
 	assert(pOp->p1>0);
 	assert(pOp->p1+pOp->p2<=(p->nMem+1 - p->nCursor)+1);
 
-#ifndef SQL_OMIT_PROGRESS_CALLBACK
 	/* Run the progress counter just before returning.
 	 */
 	if (db->xProgress!=0
@@ -1411,7 +1407,6 @@ case OP_ResultRow: {
 		rc = SQL_INTERRUPT;
 		goto abort_due_to_error;
 	}
-#endif
 
 	/* If this statement has violated immediate foreign key constraints, do
 	 * not return the number of rows modified. And do not RELEASE the statement

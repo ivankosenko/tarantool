@@ -222,9 +222,6 @@ columnname(A) ::= nm(A) typedef(Y). {sqlAddColumn(pParse,&A,&Y);}
   CONFLICT DEFERRED END FAIL
   IGNORE INITIALLY INSTEAD NO MATCH PLAN
   QUERY KEY OFFSET RAISE RELEASE REPLACE RESTRICT
-%ifdef SQL_OMIT_COMPOUND_SELECT
-  INTERSECT 
-%endif SQL_OMIT_COMPOUND_SELECT
   RENAME CTIME_KW IF
   .
 %wildcard ANY.
@@ -468,7 +465,7 @@ select(A) ::= with(W) selectnowith(X). {
 }
 
 selectnowith(A) ::= oneselect(A).
-%ifndef SQL_OMIT_COMPOUND_SELECT
+
 selectnowith(A) ::= selectnowith(A) multiselect_op(Y) oneselect(Z).  {
   Select *pRhs = Z;
   Select *pLhs = A;
@@ -495,7 +492,7 @@ selectnowith(A) ::= selectnowith(A) multiselect_op(Y) oneselect(Z).  {
 multiselect_op(A) ::= UNION(OP).             {A = @OP; /*A-overwrites-OP*/}
 multiselect_op(A) ::= UNION ALL.             {A = TK_ALL;}
 multiselect_op(A) ::= EXCEPT|INTERSECT(OP).  {A = @OP; /*A-overwrites-OP*/}
-%endif SQL_OMIT_COMPOUND_SELECT
+
 oneselect(A) ::= SELECT(S) distinct(D) selcollist(W) from(X) where_opt(Y)
                  groupby_opt(P) having_opt(Q) orderby_opt(Z) limit_opt(L). {
 #ifdef SQL_DEBUG
