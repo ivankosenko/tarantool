@@ -109,7 +109,7 @@ resolveAlias(Parse * pParse,	/* Parsing context */
 		return;
 	if (zType[0] != 'G')
 		incrAggFunctionDepth(pDup, nSubquery);
-	if (pExpr->op == TK_COLLATE) {
+	if (pExpr->op == TK_COLLATE && pDup->op != TK_COLLATE) {
 		pDup =
 		    sqlExprAddCollateString(pParse, pDup, pExpr->u.zToken);
 	}
