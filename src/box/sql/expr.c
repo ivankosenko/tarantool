@@ -4215,6 +4215,22 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 		}
 	case TK_SPAN:
 	case TK_COLLATE:{
+			enum field_type type;
+			struct Expr *left = pExpr->pLeft;
+			if (left->op == TK_COLUMN) {
+				int col_num = left->iColumn;
+				type = left->space_def->fields[col_num].type;
+			} else
+				type = left->type;
+			if (left->op != TK_CONCAT &&
+			    type != FIELD_TYPE_STRING &&
+			    type != FIELD_TYPE_SCALAR) {
+				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+					 "COLLATE can't be used with "
+					 "non-string arguments");
+				pParse->is_aborted = true;
+				break;
+			}
 			return sqlExprCodeTarget(pParse, pExpr->pLeft,
 						     target);
 		}

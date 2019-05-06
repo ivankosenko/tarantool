@@ -57,8 +57,7 @@ test:do_test(
             CREATE TABLE t3(a TEXT primary key);
             INSERT INTO t3 VALUES('def'),('jkl');
 
-            SELECT a FROM t1 EXCEPT SELECT a FROM t2
-             ORDER BY a COLLATE "unicode_ci";
+            SELECT a FROM t1 EXCEPT SELECT a FROM t2 ORDER BY a COLLATE "unicode_ci";
         ]]
     end, {
         -- <selectE-1.0>
@@ -70,8 +69,7 @@ test:do_test(
     "selectE-1.1",
     function()
         return test:execsql [[
-            SELECT a FROM t2 EXCEPT SELECT a FROM t3
-             ORDER BY a COLLATE "unicode_ci";
+            SELECT a FROM t2 EXCEPT SELECT a FROM t3 ORDER BY a COLLATE "unicode_ci";
         ]]
     end, {
         -- <selectE-1.1>
@@ -83,8 +81,7 @@ test:do_test(
     "selectE-1.2",
     function()
         return test:execsql [[
-            SELECT a FROM t2 EXCEPT SELECT a FROM t3
-             ORDER BY a COLLATE "binary";
+            SELECT a FROM t2 EXCEPT SELECT a FROM t3 ORDER BY a COLLATE "binary";
         ]]
     end, {
         -- <selectE-1.2>
@@ -96,8 +93,7 @@ test:do_test(
     "selectE-1.3",
     function()
         return test:execsql [[
-            SELECT a FROM t2 EXCEPT SELECT a FROM t3
-             ORDER BY a;
+            SELECT a FROM t2 EXCEPT SELECT a FROM t3 ORDER BY a;
         ]]
     end, {
         -- <selectE-1.3>
@@ -113,8 +109,7 @@ test:do_test(
             DELETE FROM t3;
             INSERT INTO t2 VALUES('ABC'),('def'),('GHI'),('jkl');
             INSERT INTO t3 SELECT lower(a) FROM t2;
-            SELECT a COLLATE "unicode_ci" FROM t2 EXCEPT SELECT a FROM t3
-             ORDER BY 1
+            SELECT a COLLATE "unicode_ci" FROM t2 EXCEPT SELECT a FROM t3 ORDER BY 1
         ]]
     end, {
         -- <selectE-2.1>

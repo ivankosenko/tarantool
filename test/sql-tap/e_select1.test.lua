@@ -1938,7 +1938,7 @@ test:do_execsql_test(
 test:do_execsql_test(
     "e_select-8.9.2",
     [[
-        SELECT x COLLATE "binary" FROM d4 ORDER BY 1 COLLATE "unicode_ci"
+        SELECT x COLLATE "unicode_ci" FROM d4 ORDER BY 1
     ]], {
         -- <e_select-8.9.2>
         "abc", "DEF", "ghi", "JKL"

@@ -1,6 +1,6 @@
 #!/usr/bin/env tarantool
 test = require("sqltester")
-test:plan(174)
+test:plan(183)
 
 local prefix = "collation-"
 
@@ -528,5 +528,53 @@ test:do_catchsql_test(
         "collation-2.5.0",
         'CREATE TABLE test3 (a int, b int, c int, PRIMARY KEY (a, a COLLATE foo, b, c))',
         {1, "Collation 'FOO' does not exist"})
+
+-- gh-3805 Check COLLATE passing with string-like args only.
+
+test:do_execsql_test(
+    "collation-2.6.0",
+    [[ CREATE TABLE test1 (one INT PRIMARY KEY, two INT) ]],
+    {})
+
+test:do_catchsql_test(
+        "collation-2.6.1",
+        'SELECT one COLLATE BINARY FROM test1',
+        {1, "COLLATE can't be used with non-string arguments"})
+
+test:do_catchsql_test(
+        "collation-2.6.2",
+        'SELECT one COLLATE "unicode_ci" FROM test1',
+        {1, "COLLATE can't be used with non-string arguments"})
+
+test:do_catchsql_test(
+        "collation-2.6.3",
+        'SELECT two COLLATE BINARY FROM test1',
+        {1, "COLLATE can't be used with non-string arguments"})
+
+
+test:do_catchsql_test(
+        "collation-2.6.4",
+        'SELECT (one + two) COLLATE BINARY FROM test1',
+        {1, "COLLATE can't be used with non-string arguments"})
+
+test:do_catchsql_test(
+        "collation-2.6.5",
+        'SELECT (SELECT one FROM test1) COLLATE BINARY',
+        {1, "COLLATE can't be used with non-string arguments"})
+
+test:do_execsql_test(
+        "collation-2.6.6",
+        'SELECT TRIM(\'A\') COLLATE BINARY',
+        {"A"})
+
+test:do_catchsql_test(
+        "collation-2.6.7",
+        'SELECT RANDOM() COLLATE BINARY',
+        {1, "COLLATE can't be used with non-string arguments"})
+
+test:do_catchsql_test(
+        "collation-2.6.8",
+        'SELECT LENGTH(\'A\') COLLATE BINARY',
+        {1, "COLLATE can't be used with non-string arguments"})
 
 test:finish_test()
