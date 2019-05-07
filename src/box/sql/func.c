@@ -133,6 +133,29 @@ typeofFunc(sql_context * context, int NotUsed, sql_value ** argv)
 }
 
 /*
+ * Implementation of the char_length() and character_length()
+ * functions.
+ */
+static void
+char_length_func(sql_context *context, int argc, sql_value **argv)
+{
+	assert(argc == 1);
+	UNUSED_PARAMETER(argc);
+	if (sql_value_type(argv[0]) != MP_STR) {
+		diag_set(ClientError, ER_INCONSISTENT_TYPES, "TEXT",
+			 mem_type_to_str(argv[0]));
+		context->isError = SQL_TARANTOOL_ERROR;
+		context->fErrorOrAux = 1;
+		return;
+	}
+	const unsigned char *z = sql_value_text(argv[0]);
+	if (z == NULL)
+		return;
+	int len = sql_utf8_char_count(z, sql_value_bytes(argv[0]));
+	sql_result_int(context, len);
+}
+
+/*
  * Implementation of the length() function
  */
 static void
@@ -1936,6 +1959,10 @@ sqlRegisterBuiltinFunctions(void)
 			  FIELD_TYPE_STRING),
 		FUNCTION2(length, 1, 0, 0, lengthFunc, SQL_FUNC_LENGTH,
 			  FIELD_TYPE_INTEGER),
+		FUNCTION(char_length, 1, 0, 0, char_length_func,
+			 FIELD_TYPE_INTEGER),
+		FUNCTION(character_length, 1, 0, 0, char_length_func,
+			 FIELD_TYPE_INTEGER),
 		FUNCTION(position, 2, 0, 1, position_func, FIELD_TYPE_INTEGER),
 		FUNCTION(printf, -1, 0, 0, printfFunc, FIELD_TYPE_STRING),
 		FUNCTION(unicode, 1, 0, 0, unicodeFunc, FIELD_TYPE_STRING),

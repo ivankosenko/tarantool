@@ -1,6 +1,6 @@
 #!/usr/bin/env tarantool
 test = require("sqltester")
-test:plan(25)
+test:plan(37)
 
 --!./tcltestrunner.lua
 -- 2010 August 27
@@ -284,6 +284,134 @@ test:do_test(
         return test:execsql "EXPLAIN SELECT likely(min(1.0+'2.0',4*11))"
     end, test:execsql "EXPLAIN SELECT min(1.0+'2.0',4*11)")
 
+--
+-- gh-3929: create SQL functions CHARACTER_LENGTH() and
+-- CHAR_LENGTH().
+--
+test:do_test(
+	"func3-6.1",
+	function()
+		local some_text = 'some text'
+		return test:execsql(string.format([[
+			SELECT LENGTH('%s'), CHAR_LENGTH('%s'), CHARACTER_LENGTH('%s');
+		]], some_text, some_text, some_text))
+	end, {
+		-- <func3-6.1>
+		9, 9, 9
+		-- </func3-6.1>
+	})
 
+test:do_test(
+	"func3-6.2",
+	function()
+		local some_text = 'какой-то текст'
+		return test:execsql(string.format([[
+			SELECT LENGTH('%s'), CHAR_LENGTH('%s'), CHARACTER_LENGTH('%s');
+		]], some_text, some_text, some_text))
+	end, {
+		-- <func3-6.2>
+		14, 14, 14
+		-- </func3-6.2>
+	})
+
+test:do_catchsql_test(
+	"func3-6.3",
+	[[
+		SELECT CHAR_LENGTH(12);
+	]], {
+		-- <func3-6.3>
+		1,"Inconsistent types: expected TEXT got INTEGER"
+		-- </func3-6.3>
+	})
+
+test:do_catchsql_test(
+	"func3-6.4",
+	[[
+		SELECT CHAR_LENGTH(12.34);
+	]], {
+		-- <func3-6.4>
+		1,"Inconsistent types: expected TEXT got REAL"
+		-- </func3-6.4>
+	})
+
+test:do_catchsql_test(
+	"func3-6.5",
+	[[
+		SELECT CHAR_LENGTH(x'12');
+	]], {
+		-- <func3-6.5>
+		1,"Inconsistent types: expected TEXT got BLOB"
+		-- </func3-6.5>
+	})
+
+test:do_catchsql_test(
+	"func3-6.6",
+	[[
+		SELECT CHAR_LENGTH(true);
+	]], {
+		-- <func3-6.6>
+		1,"Inconsistent types: expected TEXT got BOOLEAN"
+		-- </func3-6.6>
+	})
+
+test:do_catchsql_test(
+	"func3-6.7",
+	[[
+		SELECT CHARACTER_LENGTH(12);
+	]], {
+		-- <func3-6.7>
+		1,"Inconsistent types: expected TEXT got INTEGER"
+		-- </func3-6.7>
+	})
+
+test:do_catchsql_test(
+	"func3-6.8",
+	[[
+		SELECT CHARACTER_LENGTH(12.34);
+	]], {
+		-- <func3-6.8>
+		1,"Inconsistent types: expected TEXT got REAL"
+		-- </func3-6.8>
+	})
+
+test:do_catchsql_test(
+	"func3-6.9",
+	[[
+		SELECT CHARACTER_LENGTH(x'12');
+	]], {
+		-- <func3-6.9>
+		1,"Inconsistent types: expected TEXT got BLOB"
+		-- </func3-6.9>
+	})
+
+test:do_catchsql_test(
+	"func3-6.10",
+	[[
+		SELECT CHARACTER_LENGTH(true);
+	]], {
+		-- <func3-6.10>
+		1,"Inconsistent types: expected TEXT got BOOLEAN"
+		-- </func3-6.10>
+	})
+
+test:do_catchsql_test(
+	"func3-6.11",
+	[[
+		SELECT CHAR_LENGTH('abc', 'efg');
+	]], {
+		-- <func3-6.6>
+		1,"wrong number of arguments to function CHAR_LENGTH()"
+		-- </func3-6.6>
+	})
+
+test:do_catchsql_test(
+	"func3-6.12",
+	[[
+		SELECT CHARACTER_LENGTH('abc', 'efg');
+	]], {
+		-- <func3-6.7>
+		1,"wrong number of arguments to function CHARACTER_LENGTH()"
+		-- </func3-6.7>
+	})
 
 test:finish_test()
