@@ -1,0 +1,5 @@
+FROM registry.gitlab.com/tarantool/tarantool:ubuntu-bionic_bootstrapped
+
+COPY . /opt/tarantool
+WORKDIR /opt/tarantool
+RUN cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo >cmake.log && make -j >build.log && make install >install.log

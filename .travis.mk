@@ -34,7 +34,7 @@ docker_%:
 		make -f .travis.mk $(subst docker_,,$@)
 
 deps_ubuntu:
-	sudo apt-get update && apt-get install -y -f \
+	apt-get -y update && apt-get install -y -f \
 		build-essential cmake coreutils sed \
 		libreadline-dev libncurses5-dev libyaml-dev libssl-dev \
 		libcurl4-openssl-dev libunwind-dev libicu-dev \
@@ -42,10 +42,21 @@ deps_ubuntu:
 		python-msgpack python-yaml python-argparse python-six python-gevent \
 		lcov ruby clang llvm llvm-dev
 
-test_ubuntu: deps_ubuntu
+deps_buster_clang_8:
+	echo "deb http://apt.llvm.org/buster/ llvm-toolchain-buster-8 main" > /etc/apt/sources.list.d/clang_8.list
+	echo "deb-src http://apt.llvm.org/buster/ llvm-toolchain-buster-8 main" >> /etc/apt/sources.list.d/clang_8.list
+	wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+	apt-get -y update
+	apt-get -y install clang-8 llvm-8 llvm-8-dev
+
+build_ubuntu:
 	cmake . -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_WERROR=ON ${CMAKE_EXTRA_PARAMS}
-	make -j8
-	cd test && /usr/bin/python test-run.py --force -j 1
+	make -j
+
+runtest_ubuntu: build_ubuntu
+	cd test && /usr/bin/python test-run.py --force -j 50 --no-output-timeout -1
+
+test_ubuntu: deps_ubuntu runtest_ubuntu
 
 deps_osx:
 	brew update
@@ -61,14 +72,17 @@ test_osx: deps_osx
 	sudo launchctl limit maxfiles 20480 || :
 	ulimit -S -n 20480 || :
 	ulimit -n
-	make -j8
-	cd test && python test-run.py --force -j 1 unit/ app/ app-tap/ box/ box-tap/
+	make -j
+	cd test && python test-run.py --force -j 50 unit/ app/ app-tap/ box/ box-tap/
 
-coverage_ubuntu: deps_ubuntu
+build_cov_ubuntu:
 	cmake . -DCMAKE_BUILD_TYPE=Debug -DENABLE_GCOV=ON
-	make -j8
+	find -name "*.gcda" -exec rm -rf {} \;
+	make -j
+
+runtest_cov_ubuntu: build_cov_ubuntu
 	# Enable --long tests for coverage
-	cd test && /usr/bin/python test-run.py --force -j 1 --long
+	cd test && /usr/bin/python test-run.py --force -j 50 --long --no-output-timeout -1
 	lcov --compat-libtool --directory src/ --capture --output-file coverage.info.tmp
 	lcov --compat-libtool --remove coverage.info.tmp 'tests/*' 'third_party/*' '/usr/*' \
 		--output-file coverage.info
@@ -79,6 +93,8 @@ coverage_ubuntu: deps_ubuntu
 		echo coveralls-lcov --service-name travis-ci --service-job-id $(TRAVIS_JOB_ID) --repo-token [FILTERED] coverage.info; \
 		coveralls-lcov --service-name travis-ci --service-job-id $(TRAVIS_JOB_ID) --repo-token $(COVERALLS_TOKEN) coverage.info; \
 	fi;
+
+coverage_ubuntu: deps_ubuntu runtest_cov_ubuntu
 
 source:
 	git clone https://github.com/packpack/packpack.git packpack
