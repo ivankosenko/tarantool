@@ -34,6 +34,7 @@
 #include "lua/utils.h"
 #include "error.h"
 #include "diag.h"
+#include "fiber.h"
 #include <dlfcn.h>
 
 /**
@@ -355,6 +356,49 @@ restore:
 	return -1;
 }
 
+/**
+ * Assemble a Lua function object on Lua stack and return
+ * the reference.
+ * Returns func object reference on success, LUA_REFNIL otherwise.
+ */
+static int
+func_lua_code_load(struct func_def *def)
+{
+	int rc = LUA_REFNIL;
+	struct region *region = &fiber()->gc;
+	size_t region_svp = region_used(region);
+	struct lua_State *L = lua_newthread(tarantool_L);
+	int coro_ref = luaL_ref(tarantool_L, LUA_REGISTRYINDEX);
+
+	/*
+	 * Assemble a Lua function object with luaL_loadstring of
+	 * special 'return FUNCTION_BODY' expression and call it.
+	 * Set default sandbox to configure it to use only a
+	 * limited number of functions and modules.
+	 */
+	const char *load_pref = "return ";
+	uint32_t load_str_sz = strlen(load_pref) + strlen(def->body) + 1;
+	char *load_str = region_alloc(region, load_str_sz);
+	if (load_str == NULL) {
+		diag_set(OutOfMemory, load_str_sz, "region", "load_str");
+		goto end;
+	}
+	sprintf(load_str, "%s%s", load_pref, def->body);
+	if (luaL_loadstring(L, load_str) != 0 ||
+	    lua_pcall(L, 0, 1, 0) != 0 || !lua_isfunction(L, -1) ||
+	    luaT_get_sandbox(L) != 0) {
+		diag_set(ClientError, ER_LOAD_FUNCTION, def->name,
+			def->body);
+		goto end;
+	}
+	lua_setfenv(L, -2);
+	rc = luaL_ref(L, LUA_REGISTRYINDEX);
+end:
+	region_truncate(region, region_svp);
+	luaL_unref(L, LUA_REGISTRYINDEX, coro_ref);
+	return rc;
+}
+
 struct func *
 func_new(struct func_def *def)
 {
@@ -380,6 +424,15 @@ func_new(struct func_def *def)
 	func->owner_credentials.auth_token = BOX_USER_MAX; /* invalid value */
 	func->func = NULL;
 	func->module = NULL;
+	if (func->def->body != NULL) {
+		func->lua_func_ref = func_lua_code_load(def);
+		if (func->lua_func_ref == LUA_REFNIL) {
+			free(func);
+			return NULL;
+		}
+	} else {
+		func->lua_func_ref = LUA_REFNIL;
+	}
 	return func;
 }
 
@@ -395,8 +448,11 @@ func_unload(struct func *func)
 		}
 		module_gc(func->module);
 	}
+	if (func->lua_func_ref != -1)
+		luaL_unref(tarantool_L, LUA_REGISTRYINDEX, func->lua_func_ref);
 	func->module = NULL;
 	func->func = NULL;
+	func->lua_func_ref = -1;
 }
 
 /**
@@ -452,17 +508,18 @@ func_call(struct func *func, box_function_ctx_t *ctx, const char *args,
 }
 
 void
-func_update(struct func *func, struct func_def *def)
-{
-	func_unload(func);
-	free(func->def);
-	func->def = def;
-}
-
-void
 func_delete(struct func *func)
 {
 	func_unload(func);
 	free(func->def);
 	free(func);
+}
+
+void
+func_capture_module(struct func *new_func, struct func *old_func)
+{
+	new_func->module = old_func->module;
+	new_func->func = old_func->func;
+	old_func->module = NULL;
+	old_func->func = NULL;
 }

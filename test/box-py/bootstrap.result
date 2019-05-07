@@ -4,7 +4,7 @@ box.internal.bootstrap()
 box.space._schema:select{}
 ---
 - - ['max_id', 511]
-  - ['version', 2, 1, 3]
+  - ['version', 2, 2, 0]
 ...
 box.space._cluster:select{}
 ---
@@ -49,7 +49,7 @@ box.space._space:select{}
         'type': 'string'}, {'name': 'opts', 'type': 'map'}, {'name': 'parts', 'type': 'array'}]]
   - [296, 1, '_func', 'memtx', 0, {}, [{'name': 'id', 'type': 'unsigned'}, {'name': 'owner',
         'type': 'unsigned'}, {'name': 'name', 'type': 'string'}, {'name': 'setuid',
-        'type': 'unsigned'}]]
+        'type': 'unsigned'}, {'name': 'lua_code', 'type': 'string'}]]
   - [297, 1, '_vfunc', 'sysview', 0, {}, [{'name': 'id', 'type': 'unsigned'}, {'name': 'owner',
         'type': 'unsigned'}, {'name': 'name', 'type': 'string'}, {'name': 'setuid',
         'type': 'unsigned'}]]
@@ -141,7 +141,7 @@ box.space._user:select{}
 ...
 box.space._func:select{}
 ---
-- - [1, 1, 'box.schema.user.info', 1, 'LUA']
+- - [1, 1, 'box.schema.user.info', 1, 'LUA', '']
 ...
 box.space._priv:select{}
 ---

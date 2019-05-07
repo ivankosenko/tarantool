@@ -1,0 +1,179 @@
+env = require('test_run')
+---
+...
+test_run = env.new()
+---
+...
+--
+-- gh-4182: Add persistent LUA functions.
+--
+box.schema.user.grant('guest', 'execute', 'universe')
+---
+...
+net = require('net.box')
+---
+...
+conn = net.connect(box.cfg.listen)
+---
+...
+-- Test valid function.
+test_run:cmd("setopt delimiter ';'")
+---
+- true
+...
+body = [[function(tuple)
+	if type(tuple.address) ~= 'string' then return nil, 'Invalid field type' end
+	local t = tuple.address:lower():split()
+	for k,v in pairs(t) do t[k] = {v} end
+	return t
+end
+]]
+test_run:cmd("setopt delimiter ''");
+---
+...
+box.schema.func.create('test', {body = body, language = "C"})
+---
+- error: 'Failed to create function ''test'': function body may be specified only
+    for Lua language'
+...
+box.schema.func.create('test', {body = body})
+---
+...
+box.schema.func.exists('test')
+---
+- true
+...
+conn:call("test", {{address = "Moscow Dolgoprudny"}})
+---
+- [['moscow'], ['dolgoprudny']]
+...
+box.schema.func.create('test2', {body = body, opts = {is_deterministic = true}})
+---
+...
+box.schema.func.create('test3', {body = body, opts = {is_deterministic = true, extra = true}})
+---
+- error: 'Wrong space options (field 6): unexpected option ''extra'''
+...
+-- Test that monkey-patch attack is not possible.
+test_run:cmd("setopt delimiter ';'")
+---
+- true
+...
+body_monkey = [[function(tuple)
+	math.abs = math.log
+	return tuple
+end
+]]
+test_run:cmd("setopt delimiter ''");
+---
+...
+box.schema.func.create('body_monkey', {body = body_monkey})
+---
+...
+conn:call("body_monkey", {{address = "Moscow Dolgoprudny"}})
+---
+- {'address': 'Moscow Dolgoprudny'}
+...
+math.abs(-666.666)
+---
+- 666.666
+...
+-- Test taht 'require' is forbidden.
+test_run:cmd("setopt delimiter ';'")
+---
+- true
+...
+body_bad1 = [[function(tuple)
+	local json = require('json')
+	return json.encode(tuple)
+end
+]]
+test_run:cmd("setopt delimiter ''");
+---
+...
+box.schema.func.create('json_serializer', {body = body_bad1})
+---
+...
+conn:call("json_serializer", {{address = "Moscow Dolgoprudny"}})
+---
+- error: '[string "return function(tuple) ..."]:1: attempt to call global ''require''
+    (a nil value)'
+...
+-- Test function with spell error - case 1.
+test_run:cmd("setopt delimiter ';'")
+---
+- true
+...
+body_bad2 = [[function(tuple)
+	ret tuple
+end
+]]
+test_run:cmd("setopt delimiter ''");
+---
+...
+box.schema.func.create('body_bad2', {body = body_bad2})
+---
+- error: "Failed to dynamically load function 'body_bad2': function(tuple) \tret tuple
+    end "
+...
+-- Test function with spell error - case 2.
+test_run:cmd("setopt delimiter ';'")
+---
+- true
+...
+body_bad3 = [[func(tuple)
+	return tuple
+end
+]]
+test_run:cmd("setopt delimiter ''");
+---
+...
+box.schema.func.create('body_bad3', {body = body_bad3})
+---
+- error: "Failed to dynamically load function 'body_bad3': func(tuple) \treturn tuple
+    end "
+...
+conn:call("body_bad3", {{address = "Moscow Dolgoprudny"}})
+---
+- error: Procedure 'body_bad3' is not defined
+...
+conn:close()
+---
+...
+-- Restart server.
+test_run:cmd("restart server default")
+net = require('net.box')
+---
+...
+test_run = require('test_run').new()
+---
+...
+conn = net.connect(box.cfg.listen)
+---
+...
+conn:call("test", {{address = "Moscow Dolgoprudny"}})
+---
+- [['moscow'], ['dolgoprudny']]
+...
+conn:close()
+---
+...
+box.schema.func.drop('test')
+---
+...
+box.schema.func.exists('test')
+---
+- false
+...
+box.schema.func.drop('body_monkey')
+---
+...
+box.schema.func.drop('json_serializer')
+---
+...
+box.schema.func.drop('test2')
+---
+...
+box.schema.user.revoke('guest', 'execute', 'universe')
+---
+...

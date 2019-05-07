@@ -1981,7 +1981,8 @@ box.schema.func.create = function(name, opts)
     opts = opts or {}
     check_param_table(opts, { setuid = 'boolean',
                               if_not_exists = 'boolean',
-                              language = 'string'})
+                              language = 'string', body = 'string',
+                              opts = 'table'})
     local _func = box.space[box.schema.FUNC_ID]
     local _vfunc = box.space[box.schema.VFUNC_ID]
     local func = _vfunc.index.name:get{name}
@@ -1991,10 +1992,12 @@ box.schema.func.create = function(name, opts)
         end
         return
     end
-    opts = update_param_table(opts, { setuid = false, language = 'lua'})
+    opts = update_param_table(opts, { setuid = false, language = 'lua',
+                                      body = '', opts = setmap{}})
     opts.language = string.upper(opts.language)
     opts.setuid = opts.setuid and 1 or 0
-    _func:auto_increment{session.euid(), name, opts.setuid, opts.language}
+    _func:auto_increment{session.euid(), name, opts.setuid, opts.language,
+                         opts.body, opts.opts}
 end
 
 box.schema.func.drop = function(name, opts)

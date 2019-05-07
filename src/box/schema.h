@@ -163,14 +163,17 @@ schema_free();
 struct space *schema_space(uint32_t id);
 
 /**
- * Insert a new function or update the old one.
- *
- * @param def Function definition. In a case of success the ownership
- *        of @a def is transfered to the data dictionary, thus the caller
- *        must not delete it.
+ * Replace an existent (if any) function or insert a new one
+ * in function cache.
+ * @param func_new Function object to insert. In case of success,
+ *                 when old function object is exists, all loaded
+ *                 modules data are inherent with
+ *                 func_capture_module() when possible.
+ * @param func_old[out] The replaced function object if any.
+ * @retval Returns 0 on success, -1 otherwise.
  */
 void
-func_cache_replace(struct func_def *def);
+func_cache_replace(struct func *new_func, struct func **old_func);
 
 void
 func_cache_delete(uint32_t fid);

@@ -603,6 +603,14 @@ int
 luaT_func_find(struct lua_State *L, const char *name, const char *name_end,
 	       int *count);
 
+/**
+ * Prepare a new 'default' sandbox table on the top of the Lua
+ * stack. The 'default' sandbox consists of a minimum set of
+ * functions that are sufficient to serve persistent functions.
+ */
+int
+luaT_get_sandbox(struct lua_State *L);
+
 int
 tarantool_lua_utils_init(struct lua_State *L);
 

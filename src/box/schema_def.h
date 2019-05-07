@@ -163,6 +163,8 @@ enum {
 	BOX_FUNC_FIELD_NAME = 2,
 	BOX_FUNC_FIELD_SETUID = 3,
 	BOX_FUNC_FIELD_LANGUAGE = 4,
+	BOX_FUNC_FIELD_BODY = 5,
+	BOX_FUNC_FIELD_OPTS = 6,
 };
 
 /** _collation fields. */

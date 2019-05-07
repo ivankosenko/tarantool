@@ -789,7 +789,7 @@ box.space._space:select()
         'type': 'string'}, {'name': 'opts', 'type': 'map'}, {'name': 'parts', 'type': 'array'}]]
   - [296, 1, '_func', 'memtx', 0, {}, [{'name': 'id', 'type': 'unsigned'}, {'name': 'owner',
         'type': 'unsigned'}, {'name': 'name', 'type': 'string'}, {'name': 'setuid',
-        'type': 'unsigned'}]]
+        'type': 'unsigned'}, {'name': 'body', 'type': 'string'}, {'name': 'opts', 'type': 'map'}]]
   - [297, 1, '_vfunc', 'sysview', 0, {}, [{'name': 'id', 'type': 'unsigned'}, {'name': 'owner',
         'type': 'unsigned'}, {'name': 'name', 'type': 'string'}, {'name': 'setuid',
         'type': 'unsigned'}]]
@@ -821,7 +821,7 @@ box.space._space:select()
 ...
 box.space._func:select()
 ---
-- - [1, 1, 'box.schema.user.info', 1, 'LUA']
+- - [1, 1, 'box.schema.user.info', 1, 'LUA', '']
 ...
 session = nil
 ---

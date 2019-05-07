@@ -32,6 +32,8 @@
 #include "box/call.h"
 #include "box/error.h"
 #include "fiber.h"
+#include "box/func.h"
+#include "box/schema.h"
 
 #include "lua/utils.h"
 #include "lua/msgpack.h"
@@ -254,6 +256,33 @@ execute_lua_call(lua_State *L)
 }
 
 static int
+execute_persistent_function(lua_State *L)
+{
+	struct call_request *request = (struct call_request *)
+		lua_topointer(L, 1);
+	lua_settop(L, 0);
+
+	const char *name = request->name;
+	uint32_t name_len = mp_decode_strl(&name);
+
+	struct func *func = func_by_name(name, name_len);
+	assert(func != NULL);
+	/* Construct Lua function if required. */
+	assert(func->lua_func_ref != LUA_REFNIL);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, func->lua_func_ref);
+
+	/* Push the rest of args (a tuple). */
+	const char *args = request->args;
+	uint32_t arg_count = mp_decode_array(&args);
+	luaL_checkstack(L, arg_count, "lua_func: out of stack");
+	for (uint32_t i = 0; i < arg_count; i++)
+		luamp_decode(L, luaL_msgpack_default, &args);
+
+	lua_call(L, arg_count, LUA_MULTRET);
+	return lua_gettop(L);
+}
+
+static int
 execute_lua_eval(lua_State *L)
 {
 	struct call_request *request = (struct call_request *)
@@ -396,9 +425,12 @@ box_process_lua(struct call_request *request, struct port *base,
 }
 
 int
-box_lua_call(struct call_request *request, struct port *port)
+box_lua_call(struct func *func, struct call_request *request, struct port *port)
 {
-	return box_process_lua(request, port, execute_lua_call);
+	if (func != NULL && func->def->body != NULL)
+		return box_process_lua(request, port, execute_persistent_function);
+	else
+		return box_process_lua(request, port, execute_lua_call);
 }
 
 int

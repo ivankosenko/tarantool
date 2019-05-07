@@ -533,40 +533,35 @@ schema_free(void)
 }
 
 void
-func_cache_replace(struct func_def *def)
+func_cache_replace(struct func *new_func, struct func **old_func)
 {
-	struct func *old = func_by_id(def->fid);
-	if (old) {
-		func_update(old, def);
-		return;
-	}
 	if (mh_size(funcs) >= BOX_FUNCTION_MAX)
 		tnt_raise(ClientError, ER_FUNCTION_MAX, BOX_FUNCTION_MAX);
-	struct func *func = func_new(def);
-	if (func == NULL) {
-error:
-		panic_syserror("Out of memory for the data "
-			       "dictionary cache (stored function).");
-	}
-	const struct mh_i32ptr_node_t node = { def->fid, func };
-	mh_int_t k1 = mh_i32ptr_put(funcs, &node, NULL, NULL);
-	if (k1 == mh_end(funcs)) {
-		func->def = NULL;
-		func_delete(func);
-		goto error;
-	}
-	size_t def_name_len = strlen(func->def->name);
-	uint32_t name_hash = mh_strn_hash(func->def->name, def_name_len);
-	const struct mh_strnptr_node_t strnode = {
-		func->def->name, def_name_len, name_hash, func };
 
-	mh_int_t k2 = mh_strnptr_put(funcs_by_name, &strnode, NULL, NULL);
+	mh_int_t k1, k2;
+	struct mh_i32ptr_node_t old_node, *old_node_ptr = &old_node;
+	const struct mh_i32ptr_node_t node = { new_func->def->fid, new_func };
+	size_t def_name_len = strlen(new_func->def->name);
+	uint32_t name_hash = mh_strn_hash(new_func->def->name, def_name_len);
+	const struct mh_strnptr_node_t strnode = {
+		new_func->def->name, def_name_len, name_hash, new_func };
+
+	k1 = mh_i32ptr_put(funcs, &node, &old_node_ptr, NULL);
+	if (k1 == mh_end(funcs))
+		goto error;
+	if (old_node_ptr != NULL)
+		*old_func = (struct func *)old_node_ptr->val;
+	k2 = mh_strnptr_put(funcs_by_name, &strnode, NULL, NULL);
 	if (k2 == mh_end(funcs_by_name)) {
 		mh_i32ptr_del(funcs, k1, NULL);
-		func->def = NULL;
-		func_delete(func);
 		goto error;
 	}
+	if (*old_func != NULL)
+		func_capture_module(new_func, *old_func);
+	return;
+error:
+	panic_syserror("Out of memory for the data dictionary cache "
+		       "(stored function).");
 }
 
 void
@@ -582,7 +577,6 @@ func_cache_delete(uint32_t fid)
 				strlen(func->def->name));
 	if (k != mh_end(funcs))
 		mh_strnptr_del(funcs_by_name, k, NULL);
-	func_delete(func);
 }
 
 struct func *

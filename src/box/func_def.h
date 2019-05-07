@@ -32,6 +32,7 @@
  */
 
 #include "trivia/util.h"
+#include "opt_def.h"
 #include <stdbool.h>
 
 /**
@@ -45,6 +46,19 @@ enum func_language {
 
 extern const char *func_language_strs[];
 
+/** Function options. */
+struct func_opts {
+	/**
+	 * Whether the routine is deterministic (can produce
+	 * only one result for a given list of parameters)
+	 * or not.
+	 */
+	bool is_deterministic;
+};
+
+extern const struct func_opts func_opts_default;
+extern const struct opt_def func_opts_reg[];
+
 /**
  * Definition of a function. Function body is not stored
  * or replicated (yet).
@@ -54,6 +68,10 @@ struct func_def {
 	uint32_t fid;
 	/** Owner of the function. */
 	uint32_t uid;
+	/** Function name. */
+	char *name;
+	/** Definition of the routine. */
+	char *body;
 	/**
 	 * True if the function requires change of user id before
 	 * invocation.
@@ -63,8 +81,8 @@ struct func_def {
 	 * The language of the stored function.
 	 */
 	enum func_language language;
-	/** Function name. */
-	char name[0];
+	/** The function options. */
+	struct func_opts opts;
 };
 
 /**
@@ -73,10 +91,20 @@ struct func_def {
  * for a function of length @a a name_len.
  */
 static inline size_t
-func_def_sizeof(uint32_t name_len)
+func_def_sizeof(uint32_t name_len, uint32_t body_len)
 {
 	/* +1 for '\0' name terminating. */
-	return sizeof(struct func_def) + name_len + 1;
+	size_t sz = sizeof(struct func_def) + name_len + 1;
+	if (body_len > 0)
+		sz += body_len + 1;
+	return sz;
+}
+
+/** Create index options using default values. */
+static inline void
+func_opts_create(struct func_opts *opts)
+{
+	*opts = func_opts_default;
 }
 
 /**

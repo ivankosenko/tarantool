@@ -42,13 +42,15 @@ box_lua_call_init(struct lua_State *L);
 
 struct port;
 struct call_request;
+struct func;
 
 /**
  * Invoke a Lua stored procedure from the binary protocol
  * (implementation of 'CALL' command code).
  */
 int
-box_lua_call(struct call_request *request, struct port *port);
+box_lua_call(struct func *func, struct call_request *request,
+	     struct port *port);
 
 int
 box_lua_eval(struct call_request *request, struct port *port);

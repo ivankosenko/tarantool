@@ -46,6 +46,14 @@ static uint32_t CTID_STRUCT_IBUF_PTR;
 uint32_t CTID_CHAR_PTR;
 uint32_t CTID_CONST_CHAR_PTR;
 
+static const char *default_sandbox_exports[] =
+	{"assert", "error", "ipairs", "math", "next", "pairs", "pcall",
+	"print", "select", "string", "table", "tonumber", "tostring",
+	"type", "unpack", "xpcall", "utf8"};
+
+static int luaL_deepcopy_func_ref = LUA_REFNIL;
+static int luaL_default_sandbox_ref = LUA_REFNIL;
+
 void *
 luaL_pushcdata(struct lua_State *L, uint32_t ctypeid)
 {
@@ -1245,6 +1253,65 @@ luaT_func_find(struct lua_State *L, const char *name, const char *name_end,
 		}
 	}
 	*count = 1 + objstack;
+	return 0;
+}
+
+/**
+ * Assemble a new sandbox with given exports table on top of the
+ * Lua stack. All modules in exports list are copying deeply
+ * to ensure the immutablility of this system object.
+ */
+static int
+luaT_prepare_sandbox(struct lua_State *L, const char *exports[],
+		     uint32_t exports_count)
+{
+	assert(luaL_deepcopy_func_ref != LUA_REFNIL);
+	lua_createtable(L, exports_count, 0);
+	for (unsigned i = 0; i < exports_count; i++) {
+		int count;
+		uint32_t name_len = strlen(exports[i]);
+		if (luaT_func_find(L, exports[i], exports[i] + name_len,
+				   &count) != 0)
+			return -1;
+		switch (lua_type(L, -1)) {
+		case LUA_TTABLE:
+			lua_rawgeti(L, LUA_REGISTRYINDEX,
+				    luaL_deepcopy_func_ref);
+			lua_insert(L, -2);
+			lua_call(L, 1, LUA_MULTRET);
+			FALLTHROUGH;
+		case LUA_TFUNCTION:
+			break;
+		default:
+			unreachable();
+		}
+		lua_setfield(L, -2, exports[i]);
+	}
+	return 0;
+}
+
+int
+luaT_get_sandbox(struct lua_State *L)
+{
+	if (unlikely(luaL_deepcopy_func_ref == LUA_REFNIL)) {
+		int count;
+		const char *deepcopy = "table.deepcopy";
+		if (luaT_func_find(L, deepcopy, deepcopy + strlen(deepcopy),
+				&count) != 0)
+			return -1;
+		luaL_deepcopy_func_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+		assert(luaL_deepcopy_func_ref != LUA_REFNIL);
+	}
+	if (unlikely(luaL_default_sandbox_ref == LUA_REFNIL)) {
+		if (luaT_prepare_sandbox(L, default_sandbox_exports,
+					 nelem(default_sandbox_exports)) != 0)
+			return -1;
+		luaL_default_sandbox_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+		assert(luaL_default_sandbox_ref != LUA_REFNIL);
+	}
+	lua_rawgeti(L, LUA_REGISTRYINDEX, luaL_deepcopy_func_ref);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, luaL_default_sandbox_ref);
+	lua_call(L, 1, LUA_MULTRET);
 	return 0;
 }
 

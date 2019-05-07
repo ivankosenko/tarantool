@@ -66,6 +66,11 @@ struct func {
 	 */
 	struct rlist item;
 	/**
+	 * The reference index of Lua function object.
+	 * Is equal to LUA_REFNIL when undefined.
+	 */
+	int lua_func_ref;
+	/**
 	 * For C functions, the body of the function.
 	 */
 	box_function_f func;
@@ -101,9 +106,6 @@ struct func *
 func_new(struct func_def *def);
 
 void
-func_update(struct func *func, struct func_def *def);
-
-void
 func_delete(struct func *func);
 
 /**
@@ -112,6 +114,15 @@ func_delete(struct func *func);
 int
 func_call(struct func *func, box_function_ctx_t *ctx, const char *args,
 	  const char *args_end);
+
+/**
+ * Take over the modules that belonged to the old function.
+ * Reset module and function pointers in old function.
+ * This helper allows you to inherit already loaded function
+ * objects, that is useful on function object update.
+*/
+void
+func_capture_module(struct func *new_func, struct func *old_func);
 
 /**
  * Reload dynamically loadable module.

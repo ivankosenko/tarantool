@@ -202,7 +202,7 @@ box_process_call(struct call_request *request, struct port *port)
 	if (func && func->def->language == FUNC_LANGUAGE_C) {
 		rc = box_c_call(func, request, port);
 	} else {
-		rc = box_lua_call(request, port);
+		rc = box_lua_call(func, request, port);
 	}
 	/* Restore the original user */
 	if (orig_credentials)

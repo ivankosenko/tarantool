@@ -2402,21 +2402,42 @@ func_def_get_ids_from_tuple(struct tuple *tuple, uint32_t *fid, uint32_t *uid)
 static struct func_def *
 func_def_new_from_tuple(struct tuple *tuple)
 {
-	uint32_t len;
-	const char *name = tuple_field_str_xc(tuple, BOX_FUNC_FIELD_NAME,
-					      &len);
-	if (len > BOX_NAME_MAX)
+	uint32_t name_len, body_len;
+	const char *name, *body;
+	name = tuple_field_str_xc(tuple, BOX_FUNC_FIELD_NAME, &name_len);
+	if (name_len > BOX_NAME_MAX) {
 		tnt_raise(ClientError, ER_CREATE_FUNCTION,
 			  tt_cstr(name, BOX_INVALID_NAME_MAX),
 			  "function name is too long");
-	identifier_check_xc(name, len);
-	struct func_def *def = (struct func_def *) malloc(func_def_sizeof(len));
+	}
+	identifier_check_xc(name, name_len);
+	if (tuple_field_count(tuple) > BOX_FUNC_FIELD_BODY) {
+		body = tuple_field_str_xc(tuple, BOX_FUNC_FIELD_BODY,
+					  &body_len);
+	} else {
+		body = NULL;
+		body_len = 0;
+	}
+
+	uint32_t def_sz = func_def_sizeof(name_len, body_len);
+	struct func_def *def = (struct func_def *) malloc(def_sz);
 	if (def == NULL)
-		tnt_raise(OutOfMemory, func_def_sizeof(len), "malloc", "def");
+		tnt_raise(OutOfMemory, def_sz, "malloc", "def");
 	auto def_guard = make_scoped_guard([=] { free(def); });
+	func_opts_create(&def->opts);
 	func_def_get_ids_from_tuple(tuple, &def->fid, &def->uid);
-	memcpy(def->name, name, len);
-	def->name[len] = 0;
+
+	def->name = (char *)def + sizeof(struct func_def);
+	memcpy(def->name, name, name_len);
+	def->name[name_len] = 0;
+	if (body_len > 0) {
+		def->body = def->name + name_len + 1;
+		memcpy(def->body, body, body_len);
+		def->body[body_len] = 0;
+	} else {
+		def->body = NULL;
+	}
+
 	if (tuple_field_count(tuple) > BOX_FUNC_FIELD_SETUID)
 		def->setuid = tuple_field_u32_xc(tuple, BOX_FUNC_FIELD_SETUID);
 	else
@@ -2433,30 +2454,40 @@ func_def_new_from_tuple(struct tuple *tuple)
 		/* Lua is the default. */
 		def->language = FUNC_LANGUAGE_LUA;
 	}
+	if (def->language != FUNC_LANGUAGE_LUA && body_len > 0) {
+		tnt_raise(ClientError, ER_CREATE_FUNCTION, name,
+			  "function body may be specified only for "
+			  "Lua language");
+	}
+	if (tuple_field_count(tuple) > BOX_FUNC_FIELD_OPTS) {
+		const char *opts = tuple_field(tuple, BOX_FUNC_FIELD_OPTS);
+		if (opts_decode(&def->opts, func_opts_reg, &opts,
+				ER_WRONG_SPACE_OPTIONS, BOX_FUNC_FIELD_OPTS,
+				NULL) != 0)
+			diag_raise();
+	}
 	def_guard.is_active = false;
 	return def;
 }
 
 /** Remove a function from function cache */
 static void
-func_cache_remove_func(struct trigger * /* trigger */, void *event)
+func_cache_remove_func(struct trigger *trigger, void * /* event */)
 {
-	struct txn_stmt *stmt = txn_last_stmt((struct txn *) event);
-	uint32_t fid = tuple_field_u32_xc(stmt->old_tuple ?
-				       stmt->old_tuple : stmt->new_tuple,
-				       BOX_FUNC_FIELD_ID);
-	func_cache_delete(fid);
+	struct func *old_func = (struct func *) trigger->data;
+	func_cache_delete(old_func->def->fid);
+	func_delete(old_func);
 }
 
 /** Replace a function in the function cache */
 static void
-func_cache_replace_func(struct trigger * /* trigger */, void *event)
+func_cache_replace_func(struct trigger *trigger, void * /* event */)
 {
-	struct txn_stmt *stmt = txn_last_stmt((struct txn*) event);
-	struct func_def *def = func_def_new_from_tuple(stmt->new_tuple);
-	auto def_guard = make_scoped_guard([=] { free(def); });
-	func_cache_replace(def);
-	def_guard.is_active = false;
+	struct func *new_func = (struct func *) trigger->data;
+	struct func *old_func;
+	func_cache_replace(new_func, &old_func);
+	assert(old_func != NULL);
+	func_delete(old_func);
 }
 
 /**
@@ -2477,13 +2508,20 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 	struct func *old_func = func_by_id(fid);
 	if (new_tuple != NULL && old_func == NULL) { /* INSERT */
 		struct func_def *def = func_def_new_from_tuple(new_tuple);
+		auto def_guard = make_scoped_guard([=] { free(def); });
 		access_check_ddl(def->name, def->fid, def->uid, SC_FUNCTION,
 				 PRIV_C);
-		auto def_guard = make_scoped_guard([=] { free(def); });
-		func_cache_replace(def);
+		struct func *func = func_new(def);
+		if (func == NULL)
+			diag_raise();
+		auto func_guard = make_scoped_guard([=] { func_delete(func); });
 		def_guard.is_active = false;
+		struct func *old_func = NULL;
+		func_cache_replace(func, &old_func);
+		assert(old_func == NULL);
+		func_guard.is_active = false;
 		struct trigger *on_rollback =
-			txn_alter_trigger_new(func_cache_remove_func, NULL);
+			txn_alter_trigger_new(func_cache_remove_func, func);
 		txn_on_rollback(txn, on_rollback);
 	} else if (new_tuple == NULL) {         /* DELETE */
 		uint32_t uid;
@@ -2501,15 +2539,19 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 				  "function has grants");
 		}
 		struct trigger *on_commit =
-			txn_alter_trigger_new(func_cache_remove_func, NULL);
+			txn_alter_trigger_new(func_cache_remove_func, old_func);
 		txn_on_commit(txn, on_commit);
 	} else {                                /* UPDATE, REPLACE */
 		struct func_def *def = func_def_new_from_tuple(new_tuple);
 		auto def_guard = make_scoped_guard([=] { free(def); });
 		access_check_ddl(def->name, def->fid, def->uid, SC_FUNCTION,
 				 PRIV_A);
+		struct func *func = func_new(def);
+		if (func == NULL)
+			diag_raise();
+		def_guard.is_active = false;
 		struct trigger *on_commit =
-			txn_alter_trigger_new(func_cache_replace_func, NULL);
+			txn_alter_trigger_new(func_cache_replace_func, func);
 		txn_on_commit(txn, on_commit);
 	}
 }

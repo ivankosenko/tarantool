@@ -324,7 +324,7 @@ local function initial_1_7_5()
 
     -- create "box.schema.user.info" function
     log.info('create function "box.schema.user.info" with setuid')
-    _func:replace{1, ADMIN, 'box.schema.user.info', 1, 'LUA'}
+    _func:replace{1, ADMIN, 'box.schema.user.info', 1, 'LUA', '', MAP}
 
     -- grant 'public' role access to 'box.schema.user.info' function
     log.info('grant execute on function "box.schema.user.info" to public')
@@ -737,6 +737,24 @@ local function upgrade_to_2_1_3()
     end
 end
 
+local function upgrade_to_2_2_0()
+    log.info("Update _func format")
+    local _func = box.space[box.schema.FUNC_ID]
+    local format = {}
+    format[1] = {name='id', type='unsigned'}
+    format[2] = {name='owner', type='unsigned'}
+    format[3] = {name='name', type='string'}
+    format[4] = {name='setuid', type='unsigned'}
+    format[5] = {name='language', type='string'}
+    format[6] = {name='body', type='string'}
+    format[7] = {name='opts', type='map'}
+    for _, v in box.space._func:pairs() do
+        _ = box.space._func:replace({v.id, v.owner, v.name, v.setuid,
+                                     v[5] or 'LUA', '', setmap({})})
+    end
+    _func:format(format)
+end
+
 local function get_version()
     local version = box.space._schema:get{'version'}
     if version == nil then
@@ -768,6 +786,7 @@ local function upgrade(options)
         {version = mkversion(2, 1, 1), func = upgrade_to_2_1_1, auto = true},
         {version = mkversion(2, 1, 2), func = upgrade_to_2_1_2, auto = true},
         {version = mkversion(2, 1, 3), func = upgrade_to_2_1_3, auto = true},
+        {version = mkversion(2, 2, 0), func = upgrade_to_2_2_0, auto = true},
     }
 
     for _, handler in ipairs(handlers) do
