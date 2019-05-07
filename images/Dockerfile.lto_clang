@@ -1,0 +1,4 @@
+FROM registry.gitlab.com/tarantool/tarantool:debian-buster_bootstrapped
+
+COPY .travis.mk .
+RUN make -f .travis.mk deps_buster_clang_8
