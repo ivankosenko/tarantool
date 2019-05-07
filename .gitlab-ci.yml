@@ -1,0 +1,37 @@
+stages:
+  - test
+  - test_perf
+
+variables:
+  BRANCH: "master"
+  TVER: "2.2.0"
+
+bootstrap_perf:
+  except:
+    - ${BRANCH}
+  stage: test
+  tags:
+    - perf
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - cp -rfp /home/aleks.tikhonov/Workspaces/runners images/.
+    - docker build --network=host -t $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_bootstrapped_${TVER} -f images/Dockerfile.ubuntu_perf images
+    - docker push $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_bootstrapped_${TVER}
+
+build_perf:
+  except:
+    - ${BRANCH}
+  stage: test_perf
+  tags:
+    - perf
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build --network=host -t $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_built_${TVER} -f images/Dockerfile.ubuntu_perf_build .
+    - docker push $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_built_${TVER}
+    - docker run --rm --network=host -i $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_built_${TVER} /bin/bash -c "perf/run-tarantool-server.sh && THREADS=4 /opt/runners/sysbench-benchmarking/run.sh"
+    - docker run --rm --network=host -i $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_built_${TVER} /bin/bash -c "/opt/runners/tpcc-benchmarking/run.sh"
+    - docker run --rm --network=host -i $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_built_${TVER} /bin/bash -c "/opt/runners/ycsb-benchmarking/run.sh"
+    - docker run --rm --network=host -i $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_built_${TVER} /bin/bash -c "/opt/runners/nosqlbench-benchmarking/run.sh"
+
