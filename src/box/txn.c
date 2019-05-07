@@ -313,6 +313,19 @@ fail:
 	return -1;
 }
 
+/*
+ * Callback called if journal write failed.
+ */
+static void
+journal_write_error_cb(struct trigger *trigger, void *event)
+{
+	(void) event;
+	struct txn *txn = (struct txn *)trigger->data;
+	if (txn->engine)
+		engine_rollback(txn->engine, txn);
+	txn->engine = NULL;
+}
+
 static int64_t
 txn_write_to_wal(struct txn *txn)
 {
@@ -323,6 +336,10 @@ txn_write_to_wal(struct txn *txn)
 						      &txn->region);
 	if (req == NULL)
 		return -1;
+
+	struct trigger on_error;
+	trigger_create(&on_error, journal_write_error_cb, txn, NULL);
+	journal_entry_on_error(req, &on_error);
 
 	struct txn_stmt *stmt;
 	struct xrow_header **remote_row = req->rows;
@@ -346,12 +363,6 @@ txn_write_to_wal(struct txn *txn)
 	if (res < 0) {
 		/* Cascading rollback. */
 		txn_rollback(txn); /* Perform our part of cascading rollback. */
-		/*
-		 * Move fiber to end of event loop to avoid
-		 * execution of any new requests before all
-		 * pending rollbacks are processed.
-		 */
-		fiber_reschedule();
 		diag_set(ClientError, ER_WAL_IO);
 		diag_log();
 	} else if (stop - start > too_long_threshold) {

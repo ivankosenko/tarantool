@@ -68,6 +68,7 @@ journal_entry_new(size_t n_rows, struct region *region)
 	}
 	entry->approx_len = 0;
 	entry->n_rows = n_rows;
+	rlist_create(&entry->error_trigger);
 	entry->res = -1;
 	entry->fiber = fiber();
 	return entry;

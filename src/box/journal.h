@@ -60,6 +60,12 @@ struct journal_entry {
 	 */
 	struct fiber *fiber;
 	/**
+	 * A trigger list to call if write failed. Triggers are going to be
+	 * fired before any other processing and are a good place to implement
+	 * any rollback non-yielding behavior.
+	 */
+	struct rlist error_trigger;
+	/**
 	 * Approximate size of this request when encoded.
 	 */
 	size_t approx_len;
@@ -84,6 +90,15 @@ struct journal_entry *
 journal_entry_new(size_t n_rows, struct region *region);
 
 /**
+ * Add an on_error trigger to a journal entry.
+ */
+static inline void
+journal_entry_on_error(struct journal_entry *entry, struct trigger *trigger)
+{
+	trigger_add(&entry->error_trigger, trigger);
+}
+
+ /**
  * An API for an abstract journal for all transactions of this
  * instance, as well as for multiple instances in case of
  * synchronous replication.
