@@ -46,9 +46,9 @@ test_ubuntu: deps_ubuntu
 
 deps_osx:
 	brew update
-	brew install openssl readline curl icu4c --force
-	curl --silent --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py | python
-	pip install -r test-run/requirements.txt
+	brew install openssl readline curl icu4c cmake --force
+	curl --silent --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py | sudo python
+	pip install --user --ignore-installed -r test-run/requirements.txt
 
 test_osx: deps_osx
 	cmake . -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_WERROR=ON ${CMAKE_EXTRA_PARAMS}
@@ -59,7 +59,7 @@ test_osx: deps_osx
 	ulimit -S -n 20480 || :
 	ulimit -n
 	make -j8
-	cd test && python test-run.py --force -j 1 unit/ app/ app-tap/ box/ box-tap/
+	cd test && TRAVIS=True python test-run.py --force -j 1 unit/ app/ app-tap/ box/ box-tap/
 
 coverage_ubuntu: deps_ubuntu
 	cmake . -DCMAKE_BUILD_TYPE=Debug -DENABLE_GCOV=ON
