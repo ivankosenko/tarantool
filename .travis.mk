@@ -46,7 +46,7 @@ test_ubuntu: deps_ubuntu
 
 deps_osx:
 	brew update
-	brew install openssl readline curl icu4c cmake --force
+	brew install openssl readline curl icu4c cmake --force || true
 	curl --silent --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py | sudo python
 	pip install --user --ignore-installed -r test-run/requirements.txt
 
