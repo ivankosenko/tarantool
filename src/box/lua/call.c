@@ -45,73 +45,6 @@
 #include "mpstream.h"
 
 /**
- * A helper to find a Lua function by name and put it
- * on top of the stack.
- */
-static int
-box_lua_find(lua_State *L, const char *name, const char *name_end)
-{
-	int index = LUA_GLOBALSINDEX;
-	int objstack = 0;
-	const char *start = name, *end;
-
-	while ((end = (const char *) memchr(start, '.', name_end - start))) {
-		lua_checkstack(L, 3);
-		lua_pushlstring(L, start, end - start);
-		lua_gettable(L, index);
-		if (! lua_istable(L, -1)) {
-			diag_set(ClientError, ER_NO_SUCH_PROC,
-				 name_end - name, name);
-			luaT_error(L);
-		}
-		start = end + 1; /* next piece of a.b.c */
-		index = lua_gettop(L); /* top of the stack */
-	}
-
-	/* box.something:method */
-	if ((end = (const char *) memchr(start, ':', name_end - start))) {
-		lua_checkstack(L, 3);
-		lua_pushlstring(L, start, end - start);
-		lua_gettable(L, index);
-		if (! (lua_istable(L, -1) ||
-			lua_islightuserdata(L, -1) || lua_isuserdata(L, -1) )) {
-				diag_set(ClientError, ER_NO_SUCH_PROC,
-					  name_end - name, name);
-				luaT_error(L);
-		}
-		start = end + 1; /* next piece of a.b.c */
-		index = lua_gettop(L); /* top of the stack */
-		objstack = index;
-	}
-
-
-	lua_pushlstring(L, start, name_end - start);
-	lua_gettable(L, index);
-	if (!lua_isfunction(L, -1) && !lua_istable(L, -1)) {
-		/* lua_call or lua_gettable would raise a type error
-		 * for us, but our own message is more verbose. */
-		diag_set(ClientError, ER_NO_SUCH_PROC,
-			  name_end - name, name);
-		luaT_error(L);
-	}
-	/* setting stack that it would contain only
-	 * the function pointer. */
-	if (index != LUA_GLOBALSINDEX) {
-		if (objstack == 0) {        /* no object, only a function */
-			lua_replace(L, 1);
-		} else if (objstack == 1) { /* just two values, swap them */
-			lua_insert(L, -2);
-		} else {		    /* long path */
-			lua_insert(L, 1);
-			lua_insert(L, 2);
-			objstack = 1;
-		}
-		lua_settop(L, 1 + objstack);
-	}
-	return 1 + objstack;
-}
-
-/**
  * A helper to find lua stored procedures for box.call.
  * box.call iteslf is pure Lua, to avoid issues
  * with infinite call recursion smashing C
@@ -124,7 +57,12 @@ lbox_call_loadproc(struct lua_State *L)
 	const char *name;
 	size_t name_len;
 	name = lua_tolstring(L, 1, &name_len);
-	return box_lua_find(L, name, name + name_len);
+	int count;
+	if (luaT_func_find(L, name, name + name_len, &count) != 0) {
+		diag_set(ClientError, ER_NO_SUCH_PROC, name_len, name);
+		return luaT_error(L);
+	}
+	return count;
 }
 
 /*
@@ -292,9 +230,16 @@ execute_lua_call(lua_State *L)
 	const char *name = request->name;
 	uint32_t name_len = mp_decode_strl(&name);
 
-	int oc = 0; /* how many objects are on stack after box_lua_find */
+	/*
+	 * How many objects are on stack after
+	 * luaT_func_find call.
+	 */
+	int oc = 0;
 	/* Try to find a function by name in Lua */
-	oc = box_lua_find(L, name, name + name_len);
+	if (luaT_func_find(L, name, name + name_len, &oc) != 0) {
+		diag_set(ClientError, ER_NO_SUCH_PROC, name_len, name);
+		return luaT_error(L);
+	}
 
 	/* Push the rest of args (a tuple). */
 	const char *args = request->args;

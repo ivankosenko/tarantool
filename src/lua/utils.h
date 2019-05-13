@@ -592,6 +592,17 @@ void luaL_iterator_delete(struct luaL_iterator *it);
 
 /* }}} */
 
+/**
+ * A helper to find a Lua function by name and put it
+ * on top of the stack.
+ * Returns 0 in case of succsess and -1 otherwise; in case of
+ * success also uses count[out] argument to return the how many
+ * objects are pushed on to stack.
+ */
+int
+luaT_func_find(struct lua_State *L, const char *name, const char *name_end,
+	       int *count);
+
 int
 tarantool_lua_utils_init(struct lua_State *L);
 

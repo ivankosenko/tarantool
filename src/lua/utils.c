@@ -1190,6 +1190,65 @@ void luaL_iterator_delete(struct luaL_iterator *it)
 /* }}} */
 
 int
+luaT_func_find(struct lua_State *L, const char *name, const char *name_end,
+	       int *count)
+{
+	int index = LUA_GLOBALSINDEX;
+	int objstack = 0, top = lua_gettop(L);
+	const char *start = name, *end;
+
+	while ((end = (const char *) memchr(start, '.', name_end - start))) {
+		lua_checkstack(L, 3);
+		lua_pushlstring(L, start, end - start);
+		lua_gettable(L, index);
+		if (! lua_istable(L, -1))
+			return -1;
+		start = end + 1; /* next piece of a.b.c */
+		index = lua_gettop(L); /* top of the stack */
+	}
+
+	/* box.something:method */
+	if ((end = (const char *) memchr(start, ':', name_end - start))) {
+		lua_checkstack(L, 3);
+		lua_pushlstring(L, start, end - start);
+		lua_gettable(L, index);
+		if (! (lua_istable(L, -1) ||
+			lua_islightuserdata(L, -1) || lua_isuserdata(L, -1) ))
+				return -1;
+		start = end + 1; /* next piece of a.b.c */
+		index = lua_gettop(L); /* top of the stack */
+		objstack = index - top;
+	}
+
+	lua_pushlstring(L, start, name_end - start);
+	lua_gettable(L, index);
+	if (!lua_isfunction(L, -1) && !lua_istable(L, -1)) {
+		/* lua_call or lua_gettable would raise a type error
+		 * for us, but our own message is more verbose. */
+		return -1;
+	}
+
+	/* setting stack that it would contain only
+	 * the function pointer. */
+	if (index != LUA_GLOBALSINDEX) {
+		if (objstack == 0) {        /* no object, only a function */
+			lua_replace(L, top + 1);
+			lua_pop(L, lua_gettop(L) - top - 1);
+		} else if (objstack == 1) { /* just two values, swap them */
+			lua_insert(L, -2);
+			lua_pop(L, lua_gettop(L) - top - 2);
+		} else {                    /* long path */
+			lua_insert(L, top + 1);
+			lua_insert(L, top + 2);
+			lua_pop(L, objstack - 1);
+			objstack = 1;
+		}
+	}
+	*count = 1 + objstack;
+	return 0;
+}
+
+int
 tarantool_lua_utils_init(struct lua_State *L)
 {
 	static const struct luaL_Reg serializermeta[] = {
