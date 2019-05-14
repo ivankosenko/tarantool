@@ -85,6 +85,8 @@ tnt_EVP_MD_CTX_free
 tnt_HMAC_CTX_new
 tnt_HMAC_CTX_free
 
+lua_static_aligned_alloc
+
 # Module API
 
 _say

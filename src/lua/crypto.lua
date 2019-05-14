@@ -2,6 +2,7 @@
 
 local ffi = require('ffi')
 local buffer = require('buffer')
+local scalar = buffer.scalar
 
 ffi.cdef[[
     int tnt_openssl_init(void);
@@ -84,7 +85,6 @@ local function digest_new(digest)
         digest = digest,
         buf = buffer.ibuf(64),
         initialized = false,
-        outl = ffi.new('int[1]')
     }, digest_mt)
     self:init()
     return self
@@ -114,10 +114,10 @@ local function digest_final(self)
         return error('Digest not initialized')
     end
     self.initialized = false
-    if ffi.C.EVP_DigestFinal_ex(self.ctx, self.buf.wpos, self.outl) ~= 1 then
+    if ffi.C.EVP_DigestFinal_ex(self.ctx, self.buf.wpos, scalar.ai) ~= 1 then
         return error('Can\'t finalize digest: ' .. openssl_err_str())
     end
-    return ffi.string(self.buf.wpos, self.outl[0])
+    return ffi.string(self.buf.wpos, scalar.ai[0])
 end
 
 local function digest_free(self)
@@ -156,9 +156,7 @@ local function hmac_new(digest, key)
     local self = setmetatable({
         ctx = ctx,
         digest = digest,
-        buf = buffer.ibuf(64),
         initialized = false,
-        outl = ffi.new('int[1]')
     }, hmac_mt)
     self:init(key)
     return self
@@ -188,10 +186,11 @@ local function hmac_final(self)
         return error('HMAC not initialized')
     end
     self.initialized = false
-    if ffi.C.HMAC_Final(self.ctx, self.buf.wpos, self.outl) ~= 1 then
+    local buf = buffer.static_alloc('char', 64)
+    if ffi.C.HMAC_Final(self.ctx, buf, scalar.ai) ~= 1 then
         return error('Can\'t finalize HMAC: ' .. openssl_err_str())
     end
-    return ffi.string(self.buf.wpos, self.outl[0])
+    return ffi.string(buf, scalar.ai[0])
 end
 
 local function hmac_free(self)
@@ -254,7 +253,6 @@ local function cipher_new(cipher, key, iv, direction)
         direction = direction,
         buf = buffer.ibuf(),
         initialized = false,
-        outl = ffi.new('int[1]')
     }, cipher_mt)
     self:init(key, iv)
     return self
@@ -279,10 +277,10 @@ local function cipher_update(self, input)
         error("Usage: cipher:update(string)")
     end
     local wpos = self.buf:reserve(input:len() + self.block_size - 1)
-    if ffi.C.EVP_CipherUpdate(self.ctx, wpos, self.outl, input, input:len()) ~= 1 then
+    if ffi.C.EVP_CipherUpdate(self.ctx, wpos, scalar.ai, input, input:len()) ~= 1 then
         return error('Can\'t update cipher:' .. openssl_err_str())
     end
-    return ffi.string(wpos, self.outl[0])
+    return ffi.string(wpos, scalar.ai[0])
 end
 
 local function cipher_final(self)
@@ -291,11 +289,11 @@ local function cipher_final(self)
     end
     self.initialized = false
     local wpos = self.buf:reserve(self.block_size - 1)
-    if ffi.C.EVP_CipherFinal_ex(self.ctx, wpos, self.outl) ~= 1 then
+    if ffi.C.EVP_CipherFinal_ex(self.ctx, wpos, scalar.ai) ~= 1 then
         return error('Can\'t finalize cipher:' .. openssl_err_str())
     end
     self.initialized = false
-    return ffi.string(wpos, self.outl[0])
+    return ffi.string(wpos, scalar.ai[0])
 end
 
 local function cipher_free(self)

@@ -33,6 +33,37 @@ ibuf_reinit(struct ibuf *ibuf);
 
 void *
 ibuf_reserve_slow(struct ibuf *ibuf, size_t size);
+
+void *
+lua_static_aligned_alloc(size_t size, size_t alignment);
+
+/**
+ * Scalar is a buffer to use with FFI functions, which usually
+ * operate with pointers to scalar values like int, char, size_t,
+ * void *. To avoid doing 'ffi.new(<type>[1])' on each such FFI
+ * function invocation, a module can use one of attributes of the
+ * scalar union.
+ *
+ * Naming policy of the attributes is easy to remember:
+ * 'a' for array type + type name first letters + 'p' for pointer.
+ *
+ * For example:
+ * - int[1] - <a>rray of <i>nt - ai;
+ * - const unsigned char *[1] -
+ *       <a>rray of <c>onst <u>nsigned <c>har <p> pointer - acucp.
+ */
+union scalar {
+    size_t as[1];
+    void *ap[1];
+    int ai[1];
+    char ac[1];
+    const unsigned char *acucp[1];
+    unsigned long aul[1];
+    uint16_t u16;
+    uint32_t u32;
+    uint64_t u64;
+    int64_t i64;
+};
 ]]
 
 local builtin = ffi.C
@@ -174,8 +205,38 @@ local function ibuf_new(arg, arg2)
     errorf('Usage: ibuf([size])')
 end
 
+--
+-- Allocate a chunk of static BSS memory, or use ordinal ffi.new,
+-- when too big size.
+-- @param type C type - a struct, a basic type, etc. Should be a
+--        string: 'int', 'char *', 'struct tuple', etc.
+-- @param size Optional argument, number of elements of @a type to
+--        allocate. 1 by default.
+-- @return Cdata pointer to @a type.
+--
+local function static_alloc(type, size)
+    size = size or 1
+    local bsize = size * ffi.sizeof(type)
+    local ptr = builtin.lua_static_aligned_alloc(bsize, ffi.alignof(type))
+    if ptr ~= nil then
+        return ffi.cast(type..' *', ptr)
+    end
+    return ffi.new(type..'[?]', size)
+end
+
+--
+-- Sometimes it is wanted to use several temporary scalar cdata
+-- values. Then one union object is not enough - its attributes
+-- share memory.
+--
+local scalar_array = ffi.new('union scalar[?]', 2)
+
 return {
     ibuf = ibuf_new;
     IBUF_SHARED = ffi.C.tarantool_lua_ibuf;
     READAHEAD = READAHEAD;
+    static_alloc = static_alloc,
+    scalar_array = scalar_array,
+    -- Fast access when only one variable is needed.
+    scalar = scalar_array[0],
 }

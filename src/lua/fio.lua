@@ -275,8 +275,7 @@ fio.dirname = function(path)
     if type(path) ~= 'string' then
         error("Usage: fio.dirname(path)")
     end
-    path = ffi.new('char[?]', #path + 1, path)
-    return ffi.string(ffi.C.dirname(path))
+    return ffi.string(ffi.C.dirname(ffi.cast('char *', path)))
 end
 
 fio.umask = function(umask)
