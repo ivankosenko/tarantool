@@ -2475,7 +2475,9 @@ static void
 func_cache_remove_func(struct trigger *trigger, void * /* event */)
 {
 	struct func *old_func = (struct func *) trigger->data;
-	func_cache_delete(old_func->def->fid);
+	uint32_t fid = old_func->def->fid;
+	func_cache_delete(fid);
+	trigger_run_xc(&on_alter_func, (void *)(uintptr_t)fid);
 	func_delete(old_func);
 }
 
@@ -2488,6 +2490,7 @@ func_cache_replace_func(struct trigger *trigger, void * /* event */)
 	func_cache_replace(new_func, &old_func);
 	assert(old_func != NULL);
 	func_delete(old_func);
+	trigger_run_xc(&on_alter_func, (void *)(uintptr_t)new_func->def->fid);
 }
 
 /**
@@ -2520,6 +2523,7 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 		func_cache_replace(func, &old_func);
 		assert(old_func == NULL);
 		func_guard.is_active = false;
+		trigger_run_xc(&on_alter_func, (void *)(uintptr_t)fid);
 		struct trigger *on_rollback =
 			txn_alter_trigger_new(func_cache_remove_func, func);
 		txn_on_rollback(txn, on_rollback);

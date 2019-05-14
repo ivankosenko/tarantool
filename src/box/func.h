@@ -136,6 +136,12 @@ func_capture_module(struct func *new_func, struct func *old_func);
 int
 module_reload(const char *package, const char *package_end, struct module **module);
 
+struct lua_State;
+
+/** Initialize Lua export trigger for _func objects. */
+void
+box_lua_func_init(struct lua_State *L);
+
 #if defined(__cplusplus)
 } /* extern "C" */
 #endif /* defined(__cplusplus) */

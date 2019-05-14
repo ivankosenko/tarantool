@@ -43,6 +43,15 @@ box.schema.func.exists('test')
 ---
 - true
 ...
+box.schema.func.persistent.test ~= nil
+---
+- true
+...
+box.schema.func.persistent.test.call({address = "Moscow Dolgoprudny"})
+---
+- - - moscow
+  - - dolgoprudny
+...
 conn:call("test", {{address = "Moscow Dolgoprudny"}})
 ---
 - [['moscow'], ['dolgoprudny']]
@@ -151,6 +160,15 @@ test_run = require('test_run').new()
 conn = net.connect(box.cfg.listen)
 ---
 ...
+box.schema.func.persistent.test ~= nil
+---
+- true
+...
+box.schema.func.persistent.test.call({address = "Moscow Dolgoprudny"})
+---
+- - - moscow
+  - - dolgoprudny
+...
 conn:call("test", {{address = "Moscow Dolgoprudny"}})
 ---
 - [['moscow'], ['dolgoprudny']]
@@ -160,6 +178,10 @@ conn:close()
 ...
 box.schema.func.drop('test')
 ---
+...
+box.schema.func.persistent.test == nil
+---
+- true
 ...
 box.schema.func.exists('test')
 ---

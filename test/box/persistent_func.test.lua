@@ -21,6 +21,8 @@ test_run:cmd("setopt delimiter ''");
 box.schema.func.create('test', {body = body, language = "C"})
 box.schema.func.create('test', {body = body})
 box.schema.func.exists('test')
+box.schema.func.persistent.test ~= nil
+box.schema.func.persistent.test.call({address = "Moscow Dolgoprudny"})
 conn:call("test", {{address = "Moscow Dolgoprudny"}})
 box.schema.func.create('test2', {body = body, opts = {is_deterministic = true}})
 box.schema.func.create('test3', {body = body, opts = {is_deterministic = true, extra = true}})
@@ -73,9 +75,12 @@ test_run:cmd("restart server default")
 net = require('net.box')
 test_run = require('test_run').new()
 conn = net.connect(box.cfg.listen)
+box.schema.func.persistent.test ~= nil
+box.schema.func.persistent.test.call({address = "Moscow Dolgoprudny"})
 conn:call("test", {{address = "Moscow Dolgoprudny"}})
 conn:close()
 box.schema.func.drop('test')
+box.schema.func.persistent.test == nil
 box.schema.func.exists('test')
 box.schema.func.drop('body_monkey')
 box.schema.func.drop('json_serializer')

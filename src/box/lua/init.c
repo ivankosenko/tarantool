@@ -39,6 +39,7 @@
 
 #include "box/box.h"
 #include "box/txn.h"
+#include "box/func.h"
 #include "box/vclock.h"
 
 #include "box/lua/error.h"
@@ -315,6 +316,7 @@ box_lua_init(struct lua_State *L)
 	box_lua_xlog_init(L);
 	box_lua_execute_init(L);
 	luaopen_net_box(L);
+	box_lua_func_init(L);
 	lua_pop(L, 1);
 	tarantool_lua_console_init(L);
 	lua_pop(L, 1);

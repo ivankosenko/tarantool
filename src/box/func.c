@@ -31,10 +31,12 @@
 #include "func.h"
 #include "trivia/config.h"
 #include "assoc.h"
+#include "lua/trigger.h"
 #include "lua/utils.h"
 #include "error.h"
 #include "diag.h"
 #include "fiber.h"
+#include "schema.h"
 #include <dlfcn.h>
 
 /**
@@ -522,4 +524,122 @@ func_capture_module(struct func *new_func, struct func *old_func)
 	new_func->func = old_func->func;
 	old_func->module = NULL;
 	old_func->func = NULL;
+}
+
+static void
+box_lua_func_new(struct lua_State *L, struct func *func)
+{
+	lua_getfield(L, LUA_GLOBALSINDEX, "box");
+	lua_getfield(L, -1, "schema");
+	if (!lua_istable(L, -1)) {
+		lua_pop(L, 1); /* pop nil */
+		lua_newtable(L);
+		lua_setfield(L, -2, "schema");
+		lua_getfield(L, -1, "schema");
+	}
+	lua_getfield(L, -1, "func");
+	if (!lua_istable(L, -1)) {
+		lua_pop(L, 1); /* pop nil */
+		lua_newtable(L);
+		lua_setfield(L, -2, "func");
+		lua_getfield(L, -1, "func");
+	}
+	lua_getfield(L, -1, "persistent");
+	if (!lua_istable(L, -1)) {
+		lua_pop(L, 1); /* pop nil */
+		lua_newtable(L);
+		lua_setfield(L, -2, "persistent");
+		lua_getfield(L, -1, "persistent");
+	}
+	lua_rawgeti(L, -1, func->def->fid);
+	if (lua_isnil(L, -1)) {
+		/*
+		 * If the function already exists, modify it,
+		 * rather than create a new one -- to not
+		 * invalidate Lua variable references to old func
+		 * outside the box.schema.func[].
+		 */
+		lua_pop(L, 1);
+		lua_newtable(L);
+		lua_rawseti(L, -2, func->def->fid);
+		lua_rawgeti(L, -1, func->def->fid);
+	} else {
+		/* Clear the reference to old space by old name. */
+		lua_getfield(L, -1, "name");
+		lua_pushnil(L);
+		lua_settable(L, -4);
+	}
+
+	int top = lua_gettop(L);
+	lua_pushstring(L, "id");
+	lua_pushnumber(L, func->def->fid);
+	lua_settable(L, top);
+
+	lua_pushstring(L, "name");
+	lua_pushstring(L, func->def->name);
+	lua_settable(L, top);
+
+	lua_pushstring(L, "is_deterministic");
+	lua_pushboolean(L, func->def->opts.is_deterministic);
+	lua_settable(L, top);
+
+	lua_pushstring(L, "call");
+	lua_rawgeti(L, LUA_REGISTRYINDEX, func->lua_func_ref);
+	lua_settable(L, top);
+
+	lua_setfield(L, -2, func->def->name);
+
+	lua_pop(L, 4); /* box, schema, func, persistent */
+}
+
+
+static void
+box_lua_func_delete(struct lua_State *L, uint32_t fid)
+{
+	lua_getfield(L, LUA_GLOBALSINDEX, "box");
+	lua_getfield(L, -1, "schema");
+	lua_getfield(L, -1, "func");
+	lua_getfield(L, -1, "persistent");
+	lua_rawgeti(L, -1, fid);
+	if (!lua_isnil(L, -1)) {
+		lua_getfield(L, -1, "name");
+		lua_pushnil(L);
+		lua_rawset(L, -4);
+		lua_pop(L, 1); /* pop func */
+
+		lua_pushnil(L);
+		lua_rawseti(L, -2, fid);
+	} else {
+		lua_pop(L, 1);
+	}
+	lua_pop(L, 4); /* box, schema, func, persistent */
+}
+
+static void
+box_lua_func_new_or_delete(struct trigger *trigger, void *event)
+{
+	struct lua_State *L = (struct lua_State *) trigger->data;
+	uint32_t fid = (uint32_t)(uintptr_t)event;
+	struct func *func = func_by_id(fid);
+	/* Export only persistent Lua functions. */
+	if (func != NULL && func->def->language == FUNC_LANGUAGE_LUA &&
+	    func->def->body != NULL)
+		box_lua_func_new(L, func);
+	else
+		box_lua_func_delete(L, fid);
+}
+
+static struct trigger on_alter_func_in_lua = {
+	RLIST_LINK_INITIALIZER, box_lua_func_new_or_delete, NULL, NULL
+};
+
+void
+box_lua_func_init(struct lua_State *L)
+{
+	/*
+	 * Register the trigger that will push persistent
+	 * Lua functions objects to Lua.
+	 */
+	on_alter_func_in_lua.data = L;
+	trigger_add(&on_alter_func, &on_alter_func_in_lua);
 }

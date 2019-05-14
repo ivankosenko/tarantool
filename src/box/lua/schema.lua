@@ -1977,6 +1977,7 @@ local function object_name(object_type, object_id)
 end
 
 box.schema.func = {}
+box.schema.func.persistent = {}
 box.schema.func.create = function(name, opts)
     opts = opts or {}
     check_param_table(opts, { setuid = 'boolean',

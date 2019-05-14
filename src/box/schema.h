@@ -130,6 +130,11 @@ int
 schema_find_id(uint32_t system_space_id, uint32_t index_id, const char *name,
 	       uint32_t len, uint32_t *object_id);
 
+struct func;
+
+struct func *
+func_by_id(uint32_t fid);
+
 #if defined(__cplusplus)
 } /* extern "C" */
 
@@ -177,11 +182,6 @@ func_cache_replace(struct func *new_func, struct func **old_func);
 
 void
 func_cache_delete(uint32_t fid);
-
-struct func;
-
-struct func *
-func_by_id(uint32_t fid);
 
 static inline struct func *
 func_cache_find(uint32_t fid)
@@ -242,6 +242,12 @@ extern struct rlist on_alter_sequence;
  * Triggers fired after access denied error is created.
  */
 extern struct rlist on_access_denied;
+
+/**
+ * Triggers fired after committing a change in _func space.
+ * It is passed the txn statement that altered the space.
+ */
+extern struct rlist on_alter_func;
 
 /**
  * Context passed to on_access_denied trigger.
