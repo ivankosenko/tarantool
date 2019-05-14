@@ -64,9 +64,10 @@ static int
 parse_headers(lua_State *L, char *buffer, size_t len,
 	      int max_header_name_len)
 {
-	struct http_parser parser;
-	parser.hdr_name = (char *) calloc(max_header_name_len, sizeof(char));
-	if (parser.hdr_name == NULL) {
+	struct http_parser *parser = (struct http_parser *)
+		malloc(sizeof(*parser));
+	parser->hdr_name = (char *) calloc(max_header_name_len, sizeof(char));
+	if (parser->hdr_name == NULL) {
 		diag_set(OutOfMemory, max_header_name_len * sizeof(char),
 			 "malloc", "hdr_name");
 		return -1;
@@ -75,7 +76,7 @@ parse_headers(lua_State *L, char *buffer, size_t len,
 	lua_pushstring(L, "headers");
 	lua_newtable(L);
 	while (true) {
-		int rc = http_parse_header_line(&parser, &buffer, end_buf,
+		int rc = http_parse_header_line(parser, &buffer, end_buf,
 						max_header_name_len);
 		if (rc == HTTP_PARSE_INVALID || rc == HTTP_PARSE_CONTINUE) {
 			continue;
@@ -84,35 +85,35 @@ parse_headers(lua_State *L, char *buffer, size_t len,
 			break;
 		}
 		if (rc == HTTP_PARSE_OK) {
-			lua_pushlstring(L, parser.hdr_name,
-					parser.hdr_name_idx);
+			lua_pushlstring(L, parser->hdr_name,
+					parser->hdr_name_idx);
 
 			/* check value of header, if exists */
-			lua_pushlstring(L, parser.hdr_name,
-					parser.hdr_name_idx);
+			lua_pushlstring(L, parser->hdr_name,
+					parser->hdr_name_idx);
 			lua_gettable(L, -3);
-			int value_len = parser.hdr_value_end -
-						parser.hdr_value_start;
+			int value_len = parser->hdr_value_end -
+						parser->hdr_value_start;
 			/* table of values to handle duplicates*/
 			if (lua_isnil(L, -1)) {
 				lua_pop(L, 1);
 				lua_newtable(L);
 				lua_pushinteger(L, 1);
-				lua_pushlstring(L, parser.hdr_value_start,
+				lua_pushlstring(L, parser->hdr_value_start,
 						value_len);
 				lua_settable(L, -3);
 			} else if (lua_istable(L, -1)) {
 				lua_pushinteger(L, lua_objlen(L, -1) + 1);
-				lua_pushlstring(L, parser.hdr_value_start,
+				lua_pushlstring(L, parser->hdr_value_start,
 						value_len);
 				lua_settable(L, -3);
 			}
-			/*headers[parser.header] = {value}*/
+			/*headers[parser->header] = {value}*/
 			lua_settable(L, -3);
 		}
 	}
 
-	free(parser.hdr_name);
+	free(parser->hdr_name);
 
 	/* headers */
 	lua_settable(L, -3);
@@ -121,15 +122,16 @@ parse_headers(lua_State *L, char *buffer, size_t len,
 
 	lua_newtable(L);
 	lua_pushinteger(L, 1);
-	lua_pushinteger(L, (parser.http_major > 0) ? parser.http_major: 0);
+	lua_pushinteger(L, (parser->http_major > 0) ? parser->http_major: 0);
 	lua_settable(L, -3);
 
 	lua_pushinteger(L, 2);
-	lua_pushinteger(L, (parser.http_minor > 0) ? parser.http_minor: 0);
+	lua_pushinteger(L, (parser->http_minor > 0) ? parser->http_minor: 0);
 	lua_settable(L, -3);
 
 	/* proto */
 	lua_settable(L, -3);
+	free(parser);
 	return 0;
 }
 /* }}}
