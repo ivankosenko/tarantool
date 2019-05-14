@@ -10,6 +10,9 @@ local fiber = require('fiber')
 local fio = require('fio')
 local log = require('log')
 local buffer = require('buffer')
+local scalar = buffer.scalar
+local scalar_array = buffer.scalar_array
+local static_alloc = buffer.static_alloc
 
 local format = string.format
 
@@ -472,9 +475,9 @@ local function socket_setsockopt(self, level, name, value)
     end
 
     if info.type == 1 then
-        local value = ffi.new("int[1]", value)
+        scalar.ai[0] = value
         local res = ffi.C.setsockopt(fd,
-            level, info.iname, value, ffi.sizeof('int'))
+            level, info.iname, scalar.ai, ffi.sizeof('int'))
 
         if res < 0 then
             self._errno = boxerrno()
@@ -516,8 +519,10 @@ local function socket_getsockopt(self, level, name)
     self._errno = nil
 
     if info.type == 1 then
-        local value = ffi.new("int[1]", 0)
-        local len = ffi.new("size_t[1]", ffi.sizeof('int'))
+        local value = scalar_array[0].ai
+        value[0] = 0
+        local len = scalar_array[1].as
+        len[0] = ffi.sizeof('int')
         local res = ffi.C.getsockopt(fd, level, info.iname, value, len)
 
         if res < 0 then
@@ -532,8 +537,9 @@ local function socket_getsockopt(self, level, name)
     end
 
     if info.type == 2 then
-        local value = ffi.new("char[256]", { 0 })
-        local len = ffi.new("size_t[1]", 256)
+        local value = static_alloc('char', 256)
+        local len = scalar.as
+        len[0] = 256
         local res = ffi.C.getsockopt(fd, level, info.iname, value, len)
         if res < 0 then
             self._errno = boxerrno()
@@ -555,8 +561,9 @@ local function socket_linger(self, active, timeout)
     local info = internal.SO_OPT[level].SO_LINGER
     self._errno = nil
     if active == nil then
-        local value = ffi.new("linger_t[1]")
-        local len = ffi.new("size_t[1]", 2 * ffi.sizeof('int'))
+        local value = static_alloc('linger_t')
+        local len = scalar.as
+        len[0] = 2 * ffi.sizeof('linger_t')
         local res = ffi.C.getsockopt(fd, level, info.iname, value, len)
         if res < 0 then
             self._errno = boxerrno()
@@ -581,9 +588,10 @@ local function socket_linger(self, active, timeout)
         iactive = 0
     end
 
-    local value = ffi.new("linger_t[1]",
-        { { active = iactive, timeout = timeout } })
-    local len = 2 * ffi.sizeof('int')
+    local value = static_alloc('linger_t')
+    value[0].active = iactive
+    value[0].timeout = timeout
+    local len = ffi.sizeof('linger_t')
     local res = ffi.C.setsockopt(fd, level, info.iname, value, len)
     if res < 0 then
         self._errno = boxerrno()
@@ -798,8 +806,7 @@ local function get_recv_size(self, size)
             -- them using message peek.
             local iflags = get_iflags(internal.SEND_FLAGS, {'MSG_PEEK'})
             assert(iflags ~= nil)
-            local buf = ffi.new('char[?]', 1)
-            size = tonumber(ffi.C.recv(fd, buf, 1, iflags))
+            size = tonumber(ffi.C.recv(fd, scalar.ac, 1, iflags))
             -- Prevent race condition: proceed with the case when
             -- a datagram of length > 0 has been arrived after the
             -- getsockopt call above.
@@ -836,8 +843,7 @@ local function socket_recv(self, size, flags)
     end
 
     self._errno = nil
-    local buf = ffi.new("char[?]", size)
-
+    local buf = static_alloc('char', size)
     local res = ffi.C.recv(fd, buf, size, iflags)
 
     if res == -1 then
