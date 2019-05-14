@@ -214,7 +214,7 @@ sql_value_double(sql_value * pVal)
 bool
 sql_value_boolean(sql_value *val)
 {
-	bool b;
+	bool b = false;
 	mem_value_bool((struct Mem *) val, &b);
 	return b;
 }
