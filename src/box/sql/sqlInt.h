@@ -2693,6 +2693,8 @@ struct Parse {
 	bool parse_only;
 	/** Type of parsed_ast member. */
 	enum ast_type parsed_ast_type;
+	/** SQL parsing flags. */
+	uint32_t sql_flags;
 	/**
 	 * Members of this union are valid only
 	 * if parse_only is set to true.
@@ -4023,6 +4025,7 @@ vdbe_code_drop_trigger(struct Parse *parser, const char *trigger_name,
  * table, and, if that operation is an UPDATE, if at least one
  * of the columns in changes_list is being modified.
  *
+ * @param parser Parser context.
  * @param space_def The definition of the space that contains
  *        the triggers.
  * @param op operation one of TK_DELETE, TK_INSERT, TK_UPDATE.
@@ -4030,7 +4033,7 @@ vdbe_code_drop_trigger(struct Parse *parser, const char *trigger_name,
  * @param[out] pMask Mask of TRIGGER_BEFORE|TRIGGER_AFTER
  */
 struct sql_trigger *
-sql_triggers_exist(struct space_def *space_def, int op,
+sql_triggers_exist(struct Parse *parser, struct space_def *space_def, int op,
 		   struct ExprList *changes_list, int *mask_ptr);
 
 /**
