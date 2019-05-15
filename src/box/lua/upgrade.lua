@@ -737,6 +737,28 @@ local function upgrade_to_2_1_3()
     end
 end
 
+local function create_vcollation_space()
+    local _collation = box.space._collation
+    local format = _collation:format()
+    create_sysview(box.schema.COLLATION_ID, box.schema.VCOLLATION_ID)
+    box.space[box.schema.VCOLLATION_ID]:format(format)
+end
+
+local function upgrade_to_2_1_4()
+    local _collation = box.space._collation
+    local _index = box.space._index
+
+    -- System space format usually is in order "id, owner, name...".
+    -- The fields "name", "owner" are swapped in "_collation" format,
+    -- due to the field "owner" was added after the "_collation" creation.
+    box.space._index:delete{276, 1}
+    log.info("update index name on _collation")
+    box.space._index:insert{_collation.id, 2, 'name', 'tree', {unique = true}, {{1, 'string'}}}
+    log.info("update index owner on _collation")
+    box.space._index:insert{_collation.id, 1, 'owner', 'tree', {unique = false}, {{2, 'unsigned'}}}
+    create_vcollation_space()
+end
+
 local function get_version()
     local version = box.space._schema:get{'version'}
     if version == nil then
@@ -768,6 +790,7 @@ local function upgrade(options)
         {version = mkversion(2, 1, 1), func = upgrade_to_2_1_1, auto = true},
         {version = mkversion(2, 1, 2), func = upgrade_to_2_1_2, auto = true},
         {version = mkversion(2, 1, 3), func = upgrade_to_2_1_3, auto = true},
+        {version = mkversion(2, 1, 4), func = upgrade_to_2_1_4, auto = true}
     }
 
     for _, handler in ipairs(handlers) do
