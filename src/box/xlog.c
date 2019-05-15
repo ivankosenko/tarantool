@@ -1472,22 +1472,6 @@ xlog_close(struct xlog *l, bool reuse_fd)
 	return rc;
 }
 
-/**
- * Free xlog memory and destroy it cleanly, without side
- * effects (for use in the atfork handler).
- */
-void
-xlog_atfork(struct xlog *xlog)
-{
-	/*
-	 * Close the file descriptor STDIO buffer does not
-	 * make its way into the respective file in
-	 * fclose().
-	 */
-	close(xlog->fd);
-	xlog->fd = -1;
-}
-
 /* }}} */
 
 /* {{{ struct xlog_cursor */

@@ -2167,16 +2167,6 @@ box_cfg(void)
 	}
 }
 
-/**
- * box.coredump() forks to save a core. The entire
- * server forks in box.cfg{} if background=true.
- */
-void
-box_atfork()
-{
-	wal_atfork();
-}
-
 int
 box_checkpoint()
 {

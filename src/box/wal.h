@@ -164,9 +164,6 @@ void
 wal_clear_watcher(struct wal_watcher *watcher,
 		  void (*process_cb)(struct cbus_endpoint *));
 
-void
-wal_atfork();
-
 enum wal_mode
 wal_mode();
 

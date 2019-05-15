@@ -341,7 +341,6 @@ static void
 tarantool_atfork()
 {
 	signal_reset();
-	box_atfork();
 }
 
 /**
