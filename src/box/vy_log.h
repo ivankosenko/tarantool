@@ -439,12 +439,6 @@ void
 vy_log_free(void);
 
 /**
- * Open current vy_log file.
- */
-int
-vy_log_open(struct xlog *xlog);
-
-/**
  * Rotate the metadata log. This function creates a new
  * xlog file in the log directory having vclock @vclock
  * and writes records required to recover active LSM trees.

@@ -46,19 +46,20 @@
 #include <small/rlist.h>
 
 #include "assoc.h"
+#include "cbus.h"
 #include "coio_task.h"
 #include "diag.h"
 #include "errcode.h"
 #include "errinj.h"
 #include "fiber.h"
 #include "iproto_constants.h" /* IPROTO_INSERT */
+#include "journal.h"
 #include "key_def.h"
 #include "latch.h"
 #include "replication.h" /* INSTANCE_UUID */
 #include "salad/stailq.h"
 #include "say.h"
 #include "tt_static.h"
-#include "wal.h"
 #include "vclock.h"
 #include "xlog.h"
 #include "xrow.h"
@@ -178,6 +179,14 @@ struct vy_log {
 	 * only relevant if @tx_failed is set.
 	 */
 	struct diag tx_diag;
+	/** Vylog file. */
+	struct xlog xlog;
+	/** Vylog IO thread. */
+	struct cord cord;
+	/** Pipe to the vylog thread. */
+	struct cpipe pipe;
+	/** Returning pipe from the vylog thread back to tx. */
+	struct cpipe tx_pipe;
 };
 static struct vy_log vy_log;
 
@@ -187,6 +196,9 @@ vy_recovery_new_locked(int64_t signature, int flags);
 static int
 vy_recovery_process_record(struct vy_recovery *recovery,
 			   const struct vy_log_record *record);
+
+static int
+vy_log_open(void);
 
 static int
 vy_log_create(const struct vclock *vclock, struct vy_recovery *recovery);
@@ -731,6 +743,26 @@ err:
 	return NULL;
 }
 
+/** Vylog thread main loop. */
+static int
+vy_log_thread_f(va_list ap)
+{
+	(void)ap;
+
+	struct cbus_endpoint endpoint;
+	cbus_endpoint_create(&endpoint, "vylog", fiber_schedule_cb, fiber());
+
+	cpipe_create(&vy_log.tx_pipe, "tx");
+
+	cbus_loop(&endpoint);
+
+	if (xlog_is_open(&vy_log.xlog))
+		xlog_close(&vy_log.xlog, false);
+
+	cpipe_destroy(&vy_log.tx_pipe);
+	return 0;
+}
+
 void
 vy_log_init(const char *dir)
 {
@@ -740,7 +772,45 @@ vy_log_init(const char *dir)
 	region_create(&vy_log.pool, cord_slab_cache());
 	stailq_create(&vy_log.tx);
 	diag_create(&vy_log.tx_diag);
-	wal_init_vy_log();
+	xlog_clear(&vy_log.xlog);
+
+	if (cord_costart(&vy_log.cord, "vinyl.log", vy_log_thread_f, NULL) != 0)
+		panic_syserror("failed to start vinyl log thread");
+
+	cpipe_create(&vy_log.pipe, "vylog");
+}
+
+struct vy_log_flush_msg {
+	struct cbus_call_msg base;
+	struct journal_entry *entry;
+};
+
+static int
+vy_log_flush_f(struct cbus_call_msg *base)
+{
+	struct vy_log_flush_msg *msg = (struct vy_log_flush_msg *)base;
+	struct journal_entry *entry = msg->entry;
+	struct xlog *xlog = &vy_log.xlog;
+
+	if (!xlog_is_open(xlog)) {
+		if (vy_log_open() < 0)
+			return -1;
+	}
+
+	xlog_tx_begin(xlog);
+	for (int i = 0; i < entry->n_rows; ++i) {
+		entry->rows[i]->tm = ev_now(loop());
+		if (xlog_write_row(xlog, entry->rows[i]) < 0) {
+			xlog_tx_rollback(xlog);
+			return -1;
+		}
+	}
+
+	if (xlog_tx_commit(xlog) < 0 ||
+	    xlog_flush(xlog) < 0)
+		return -1;
+
+	return 0;
 }
 
 /**
@@ -798,10 +868,16 @@ vy_log_flush(void)
 	assert(i == tx_size);
 
 	/*
-	 * Do actual disk writes on behalf of the WAL
+	 * Do actual disk writes on behalf of the vylog thread
 	 * so as not to block the tx thread.
 	 */
-	if (wal_write_vy_log(entry) != 0)
+	struct vy_log_flush_msg msg;
+	msg.entry = entry;
+	bool cancellable = fiber_set_cancellable(false);
+	int rc = cbus_call(&vy_log.pipe, &vy_log.tx_pipe, &msg.base,
+			   vy_log_flush_f, NULL, TIMEOUT_INFINITY);
+	fiber_set_cancellable(cancellable);
+	if (rc != 0)
 		goto err;
 
 	/* Success. Free flushed records. */
@@ -817,14 +893,21 @@ err:
 void
 vy_log_free(void)
 {
+	cbus_stop_loop(&vy_log.pipe);
+	if (cord_join(&vy_log.cord) != 0)
+		panic_syserror("failed to join vinyl log thread");
 	xdir_destroy(&vy_log.dir);
 	region_destroy(&vy_log.pool);
 	diag_destroy(&vy_log.tx_diag);
 }
 
-int
-vy_log_open(struct xlog *xlog)
+/**
+ * Open current vy_log file.
+ */
+static int
+vy_log_open(void)
 {
+	struct xlog *xlog = &vy_log.xlog;
 	/*
 	 * Open the current log file or create a new one
 	 * if it doesn't exist.
@@ -1022,6 +1105,15 @@ vy_log_rotate_f(va_list ap)
 	return vy_log_create(vclock, recovery);
 }
 
+static int
+vy_log_close_f(struct cbus_call_msg *msg)
+{
+	(void)msg;
+	if (xlog_is_open(&vy_log.xlog))
+		xlog_close(&vy_log.xlog, false);
+	return 0;
+}
+
 int
 vy_log_rotate(const struct vclock *vclock)
 {
@@ -1069,9 +1161,14 @@ vy_log_rotate(const struct vclock *vclock)
 
 	/*
 	 * Success. Close the old log. The new one will be opened
-	 * automatically on the first write (see wal_write_vy_log()).
+	 * automatically on the first write (see vy_log_flush_f()).
 	 */
-	wal_rotate_vy_log();
+	struct cbus_call_msg msg;
+	bool cancellable = fiber_set_cancellable(false);
+	cbus_call(&vy_log.pipe, &vy_log.tx_pipe, &msg,
+		  vy_log_close_f, NULL, TIMEOUT_INFINITY);
+	fiber_set_cancellable(cancellable);
+
 	vclock_copy(&vy_log.last_checkpoint, vclock);
 
 	/* Add the new vclock to the xdir so that we can track it. */

@@ -222,21 +222,6 @@ wal_set_checkpoint_threshold(int64_t threshold);
 void
 wal_collect_garbage(const struct vclock *vclock);
 
-void
-wal_init_vy_log();
-
-/**
- * Write xrows to the vinyl metadata log.
- */
-int
-wal_write_vy_log(struct journal_entry *req);
-
-/**
- * Rotate the vinyl metadata log.
- */
-void
-wal_rotate_vy_log();
-
 #if defined(__cplusplus)
 } /* extern "C" */
 #endif /* defined(__cplusplus) */
