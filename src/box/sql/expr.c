@@ -285,9 +285,9 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 		if (op == TK_FUNCTION) {
 			uint32_t arg_count = p->x.pList == NULL ? 0 :
 					     p->x.pList->nExpr;
-			struct FuncDef *func = sqlFindFunction(parse->db,
-							       p->u.zToken,
-							       arg_count, 0);
+			struct FuncDef *func =
+				sql_find_function(parse->db, p->u.zToken,
+						  arg_count, false, false);
 			if (func == NULL)
 				break;
 			if (func->is_coll_derived) {
@@ -3991,14 +3991,14 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			nFarg = pFarg ? pFarg->nExpr : 0;
 			assert(!ExprHasProperty(pExpr, EP_IntValue));
 			zId = pExpr->u.zToken;
-			pDef = sqlFindFunction(db, zId, nFarg, 0);
+			pDef = sql_find_function(db, zId, nFarg, false, false);
 #ifdef SQL_ENABLE_UNKNOWN_SQL_FUNCTION
 			if (pDef == 0 && pParse->explain) {
-				pDef =
-				    sqlFindFunction(db, "unknown", nFarg, 0);
+				pDef = sql_find_function(db, "unknown", nFarg,
+							 false, false);
 			}
 #endif
-			if (pDef == 0 || pDef->xFinalize != 0) {
+			if (pDef == NULL || pDef->xFinalize != NULL) {
 				diag_set(ClientError, ER_NO_SUCH_FUNCTION,
 					 zId);
 				pParse->is_aborted = true;
@@ -5461,12 +5461,12 @@ analyzeAggregate(Walker * pWalker, Expr * pExpr)
 						pItem->iMem = ++pParse->nMem;
 						assert(!ExprHasProperty
 						       (pExpr, EP_IntValue));
-						pItem->pFunc = sqlFindFunction(
+						pItem->pFunc = sql_find_function(
 							pParse->db,
 							pExpr->u.zToken,
 							pExpr->x.pList ?
 							pExpr->x.pList->nExpr : 0,
-							0);
+							false, false);
 						if (pExpr->flags & EP_Distinct) {
 							pItem->iDistinct =
 								pParse->nTab++;

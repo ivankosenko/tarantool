@@ -1506,7 +1506,6 @@ struct sql {
 #define SQL_ReverseOrder   0x00020000	/* Reverse unordered SELECTs */
 #define SQL_RecTriggers    0x00040000	/* Enable recursive triggers */
 #define SQL_AutoIndex      0x00100000	/* Enable automatic indexes */
-#define SQL_PreferBuiltin  0x00200000	/* Preference to built-in funcs */
 #define SQL_EnableTrigger  0x01000000	/* True to enable triggers */
 #define SQL_DeferFKs       0x02000000	/* Defer all FK constraints */
 #define SQL_VdbeEQP        0x08000000	/* Debug EXPLAIN QUERY PLAN */
@@ -3927,7 +3926,29 @@ void sqlSelectSetName(Select *, const char *);
 #define sqlSelectSetName(A,B)
 #endif
 void sqlInsertBuiltinFuncs(FuncDef *, int);
-FuncDef *sqlFindFunction(sql *, const char *, int, u8);
+
+/**
+ * Find a user function by given name and number of arguments.
+ * @param db The database handle.
+ * @param func_name The function name 0-terminated string.
+ * @param arg_count The count of function's arguments.
+ *                  May be set -1 for any number.
+ * @param is_builtin If this flag is set true, perform lookup
+ *                   for builtin function.
+ * @param is_create If this flag is set true, then a new (blank)
+ *                  FuncDef structure is created and liked into
+ *                  the "db" structure if a no matching function
+ *                  previously existed.
+ * @retval Returns FuncDef pointer when object was found and NULL
+ *         otherwise (if is_create is not set true).
+ *         When is_create is set true returns NULL only in case of
+ *         memory allocation error.
+ *         Sets diag message in case of error.
+ */
+struct FuncDef *
+sql_find_function(struct sql *db, const char *func_name, int arg_count,
+		  bool is_builtin, bool is_create);
+
 void sqlRegisterBuiltinFunctions(void);
 void sqlRegisterDateTimeFunctions(void);
 void sqlRegisterPerConnectionBuiltinFunctions(sql *);

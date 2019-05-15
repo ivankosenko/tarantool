@@ -602,10 +602,11 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 			assert(!ExprHasProperty(pExpr, EP_xIsSelect));
 			zId = pExpr->u.zToken;
 			nId = sqlStrlen30(zId);
-			pDef = sqlFindFunction(pParse->db, zId, n, 0);
+			pDef = sql_find_function(pParse->db, zId, n,
+						 false, false);
 			if (pDef == 0) {
-				pDef =
-				    sqlFindFunction(pParse->db, zId, -2,0);
+				pDef = sql_find_function(pParse->db, zId, -2,
+							 false, false);
 				if (pDef == 0) {
 					no_such_func = 1;
 				} else {

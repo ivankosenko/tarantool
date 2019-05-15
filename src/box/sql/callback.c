@@ -131,6 +131,19 @@ functionSearch(int h,		/* Hash of the name */
 	return 0;
 }
 
+/**
+ * Cache function is used to organise sqlBuiltinFunctions table.
+ * @param func_name The name of builtin function.
+ * @param func_name_len The length of the @a name.
+ * @retval Hash value is calculated for given name.
+ */
+static int
+sql_builtin_func_name_hash(const char *func_name, uint32_t func_name_len)
+{
+	return (sqlUpperToLower[(u8) func_name[0]] +
+		func_name_len) % SQL_FUNC_HASH_SZ;
+}
+
 /*
  * Insert a new FuncDef into a FuncDefHash hash table.
  */
@@ -144,9 +157,7 @@ sqlInsertBuiltinFuncs(FuncDef * aDef,	/* List of global functions to be inserted
 		FuncDef *pOther;
 		const char *zName = aDef[i].zName;
 		int nName = sqlStrlen30(zName);
-		int h =
-		    (sqlUpperToLower[(u8) zName[0]] +
-		     nName) % SQL_FUNC_HASH_SZ;
+		int h = sql_builtin_func_name_hash(zName, nName);
 		pOther = functionSearch(h, zName);
 		if (pOther) {
 			assert(pOther != &aDef[i] && pOther->pNext != &aDef[i]);
@@ -160,110 +171,79 @@ sqlInsertBuiltinFuncs(FuncDef * aDef,	/* List of global functions to be inserted
 	}
 }
 
-/*
- * Locate a user function given a name, a number of arguments and a flag
- * indicating whether the function prefers UTF-16 over UTF-8.  Return a
- * pointer to the FuncDef structure that defines that function, or return
- * NULL if the function does not exist.
- *
- * If the createFlag argument is true, then a new (blank) FuncDef
- * structure is created and liked into the "db" structure if a
- * no matching function previously existed.
- *
- * If nArg is -2, then the first valid function found is returned.  A
- * function is valid if xSFunc is non-zero.  The nArg==(-2)
- * case is used to see if zName is a valid function name for some number
- * of arguments.  If nArg is -2, then createFlag must be 0.
- *
- * If createFlag is false, then a function with the required name and
- * number of arguments may be returned even if the eTextRep flag does not
- * match that requested.
- */
-FuncDef *
-sqlFindFunction(sql * db,	/* An open database */
-		    const char *zName,	/* Name of the function.  zero-terminated */
-		    int nArg,	/* Number of arguments.  -1 means any number */
-		    u8 createFlag	/* Create new entry if true and does not otherwise exist */
-    )
+struct FuncDef *
+sql_find_function(struct sql *db, const char *func_name, int arg_count,
+		  bool is_builtin, bool is_create)
 {
-	FuncDef *p;		/* Iterator variable */
-	FuncDef *pBest = 0;	/* Best match found so far */
-	int bestScore = 0;	/* Score of best match */
-	int h;			/* Hash value */
-	int nName;		/* Length of the name */
-	struct session *user_session = current_session();
-
-	assert(nArg >= (-2));
-	assert(nArg >= (-1) || createFlag == 0);
-	nName = sqlStrlen30(zName);
-
-	/* First search for a match amongst the application-defined functions.
+	assert(arg_count >= -2);
+	assert(arg_count >= -1 || !is_create);
+	assert(!is_create || !is_builtin);
+	uint32_t func_name_len = strlen(func_name);
+	/*
+	 * The 'score' of the best match is calculated
+	 * with matchQuality estimator.
 	 */
-	p = (FuncDef *) sqlHashFind(&db->aFunc, zName);
-	while (p) {
-		int score = matchQuality(p, nArg);
-		if (score > bestScore) {
-			pBest = p;
-			bestScore = score;
+	int func_score = 0;
+	/*
+	 * The pointer of a function having the highest 'score'
+	 * for given name and arg_count parameters.
+	 */
+	struct FuncDef *func = NULL;
+	if (is_builtin)
+		goto lookup_for_builtin;
+	/* Search amongst the user-defined functions. */
+	for (struct FuncDef *p = sqlHashFind(&db->aFunc, func_name);
+	     p != NULL; p = p->pNext) {
+		int score = matchQuality(p, arg_count);
+		if (score > func_score) {
+			func = p;
+			func_score = score;
 		}
-		p = p->pNext;
 	}
-
-	/* If no match is found, search the built-in functions.
-	 *
-	 * If the SQL_PreferBuiltin flag is set, then search the built-in
-	 * functions even if a prior app-defined function was found.  And give
-	 * priority to built-in functions.
-	 *
-	 * Except, if createFlag is true, that means that we are trying to
-	 * install a new function.  Whatever FuncDef structure is returned it will
-	 * have fields overwritten with new information appropriate for the
-	 * new function.  But the FuncDefs for built-in functions are read-only.
-	 * So we must not search for built-ins when creating a new function.
-	 */
-	if (!createFlag &&
-	    (pBest == 0
-	     || (user_session->sql_flags & SQL_PreferBuiltin) != 0)) {
-		bestScore = 0;
-		h = (sqlUpperToLower[(u8) zName[0]] +
-		     nName) % SQL_FUNC_HASH_SZ;
-		p = functionSearch(h, zName);
-		while (p) {
-			int score = matchQuality(p, nArg);
-			if (score > bestScore) {
-				pBest = p;
-				bestScore = score;
+	if (!is_create && func == NULL) {
+lookup_for_builtin:
+		func_score = 0;
+		int h = sql_builtin_func_name_hash(func_name, func_name_len);
+		for (struct FuncDef *p = functionSearch(h, func_name);
+		     p != NULL; p = p->pNext) {
+			int score = matchQuality(p, arg_count);
+			if (score > func_score) {
+				func = p;
+				func_score = score;
 			}
-			p = p->pNext;
 		}
 	}
-
-	/* If the createFlag parameter is true and the search did not reveal an
-	 * exact match for the name, number of arguments and encoding, then add a
-	 * new entry to the hash table and return it.
+	/*
+	 * If the is_create parameter is true and the search did
+	 * not reveal an exact match for the name, number of
+	 * arguments, then add a new entry to the hash table and
+	 * return it.
 	 */
-	if (createFlag && bestScore < FUNC_PERFECT_MATCH &&
-	    (pBest =
-	     sqlDbMallocZero(db, sizeof(*pBest) + nName + 1)) != 0) {
-		FuncDef *pOther;
-		pBest->zName = (const char *)&pBest[1];
-		pBest->nArg = (u16) nArg;
-		pBest->funcFlags = 0;
-		memcpy((char *)&pBest[1], zName, nName + 1);
-		pOther =
-		    (FuncDef *) sqlHashInsert(&db->aFunc, pBest->zName,
-						  pBest);
-		if (pOther == pBest) {
-			sqlDbFree(db, pBest);
+	if (is_create && func_score < FUNC_PERFECT_MATCH) {
+		uint32_t func_sz = sizeof(func[0]) + func_name_len + 1;
+		func = sqlDbMallocZero(db, func_sz);
+		if (func == NULL) {
+			diag_set(OutOfMemory, func_sz, "sqlDbMallocZero",
+				 "func");
+			return NULL;
+		}
+		func->zName = (const char *) &func[1];
+		func->nArg = (u16) arg_count;
+		func->funcFlags = 0;
+		memcpy((char *)&func[1], func_name, func_name_len + 1);
+		struct FuncDef *old_func =
+		    (struct FuncDef *) sqlHashInsert(&db->aFunc, func->zName,
+						     func);
+		if (old_func == func) {
+			sqlDbFree(db, func);
 			sqlOomFault(db);
-			return 0;
+			diag_set(OutOfMemory, func_sz, "sqlHashInsert",
+				 "func");
+			return NULL;
 		} else {
-			pBest->pNext = pOther;
+			func->pNext = old_func;
 		}
 	}
-
-	if (pBest && (pBest->xSFunc || createFlag)) {
-		return pBest;
-	}
-	return 0;
+	return func != NULL &&
+	       (func->xSFunc != NULL || is_create || is_builtin) ? func : NULL;
 }

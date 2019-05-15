@@ -1811,7 +1811,7 @@ sql_overload_function(sql * db, const char *zName,
 {
 	int rc = SQL_OK;
 
-	if (sqlFindFunction(db, zName, nArg, 0) == 0) {
+	if (sql_find_function(db, zName, nArg, false, false) == NULL) {
 		rc = sqlCreateFunc(db, zName, type, nArg, 0, 0,
 				       sqlInvalidFunction, 0, 0, 0);
 	}
@@ -1834,19 +1834,6 @@ sqlRegisterPerConnectionBuiltinFunctions(sql * db)
 	}
 }
 
-/*
- * Set the LIKEOPT flag on the 2-argument function with the given name.
- */
-static void
-setLikeOptFlag(sql * db, const char *zName, u8 flagVal)
-{
-	FuncDef *pDef;
-	pDef = sqlFindFunction(db, zName, 2, 0);
-	if (ALWAYS(pDef)) {
-		pDef->funcFlags |= flagVal;
-	}
-}
-
 /**
  * Register the built-in LIKE function.
  */
@@ -1859,13 +1846,14 @@ sqlRegisterLikeFunctions(sql *db, int is_case_insensitive)
 	 * supplied pattern and FALSE otherwise.
 	 */
 	int *is_like_ci = SQL_INT_TO_PTR(is_case_insensitive);
-	sqlCreateFunc(db, "LIKE", FIELD_TYPE_BOOLEAN, 2, 0,
-			  is_like_ci, likeFunc, 0, 0, 0);
-	sqlCreateFunc(db, "LIKE", FIELD_TYPE_BOOLEAN, 3, 0,
-			  is_like_ci, likeFunc, 0, 0, 0);
-	setLikeOptFlag(db, "LIKE",
-		       !(is_case_insensitive) ? (SQL_FUNC_LIKE |
-		       SQL_FUNC_CASE) : SQL_FUNC_LIKE);
+	struct FuncDef *like2 = sql_find_function(db, "LIKE", 2, true, false);
+	like2->funcFlags = is_case_insensitive ? SQL_FUNC_LIKE :
+			   SQL_FUNC_LIKE | SQL_FUNC_CASE;
+	like2->pUserData = is_like_ci;
+	assert(like2 != NULL);
+	struct FuncDef *like3 = sql_find_function(db, "LIKE", 2, true, false);
+	assert(like3 != NULL);
+	like3->pUserData = is_like_ci;
 }
 
 int
@@ -1875,7 +1863,8 @@ sql_is_like_func(struct sql *db, struct Expr *expr, int *is_like_ci)
 	    expr->x.pList->nExpr != 2)
 		return 0;
 	assert(!ExprHasProperty(expr, EP_xIsSelect));
-	struct FuncDef *func = sqlFindFunction(db, expr->u.zToken, 2, 0);
+	struct FuncDef *func =
+		sql_find_function(db, expr->u.zToken, 2, false, false);
 	assert(func != NULL);
 	if ((func->funcFlags & SQL_FUNC_LIKE) == 0)
 		return 0;

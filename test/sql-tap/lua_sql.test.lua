@@ -1,7 +1,7 @@
 #!/usr/bin/env tarantool
 test = require("sqltester")
 NULL = require('msgpack').NULL
-test:plan(24)
+test:plan(25)
 
 local function func1(a)
     return a
@@ -17,6 +17,15 @@ test:do_test(
         return test:execsql("select func1(1)")
     end,
     {2})
+
+test:do_test(
+    "lua_sql-1.1",
+    function ()
+        local ret, errmsg = pcall(box.internal.sql_create_function,
+                                  "upper", "TEXT", func1)
+        return {ret, errmsg}
+    end,
+    {0, "SQL error: cannot create a function with a signature that coincides builtin function"})
 
 -- new function should replace prewious one
 test:do_test(

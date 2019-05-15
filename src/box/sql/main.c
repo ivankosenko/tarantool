@@ -428,29 +428,28 @@ sqlCreateFunc(sql * db,
 	assert(SQL_FUNC_CONSTANT == SQL_DETERMINISTIC);
 	extraFlags = flags & SQL_DETERMINISTIC;
 
-
+	/* Ensure there is no builtin function with this name. */
+	p = sql_find_function(db, zFunctionName, -2, true, false);
+	if (p != NULL) {
+		diag_set(ClientError, ER_SQL, "cannot create a function with "
+			 "a signature that coincides builtin function");
+		return SQL_TARANTOOL_ERROR;
+	}
 	/* Check if an existing function is being overridden or deleted. If so,
 	 * and there are active VMs, then return SQL_BUSY. If a function
 	 * is being overridden/deleted but there are no active VMs, allow the
 	 * operation to continue but invalidate all precompiled statements.
 	 */
-	p = sqlFindFunction(db, zFunctionName, nArg, 0);
-	if (p && p->nArg == nArg) {
-		if (db->nVdbeActive) {
-			sqlErrorWithMsg(db, SQL_BUSY,
-					    "unable to delete/modify user-function due to active statements");
-			assert(!db->mallocFailed);
-			return SQL_BUSY;
-		} else {
-			sqlExpirePreparedStatements(db);
-		}
+	p = sql_find_function(db, zFunctionName, nArg, false, false);
+	if (p != NULL && p->nArg == nArg && db->nVdbeActive > 0) {
+		sqlErrorWithMsg(db, SQL_BUSY, "unable to delete/modify "
+				"user-function due to active statements");
+		return SQL_BUSY;
 	}
-
-	p = sqlFindFunction(db, zFunctionName, nArg, 1);
-	assert(p || db->mallocFailed);
-	if (!p) {
-		return SQL_NOMEM;
-	}
+	/* Create a new function with given signature. */
+	p = sql_find_function(db, zFunctionName, nArg, false, true);
+	if (p == NULL)
+		return SQL_TARANTOOL_ERROR;
 
 	/* If an older version of the function with a configured destructor is
 	 * being replaced invoke the destructor function here.

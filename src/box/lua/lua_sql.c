@@ -195,7 +195,11 @@ lbox_sql_create_function(struct lua_State *L)
 					   is_deterministic ? SQL_DETERMINISTIC : 0,
 					   func_info, lua_sql_call, NULL, NULL,
 					   lua_sql_destroy);
-	if (rc != 0)
-		return luaL_error(L, sqlErrStr(rc));
+	if (rc != 0) {
+		const char *err = rc == SQL_TARANTOOL_ERROR ?
+				  box_error_message(box_error_last()) :
+				  sqlErrStr(rc);
+		return luaL_error(L, err);
+	}
 	return 0;
 }
