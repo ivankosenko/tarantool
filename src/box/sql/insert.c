@@ -36,7 +36,6 @@
 #include "sqlInt.h"
 #include "tarantoolInt.h"
 #include "vdbeInt.h"
-#include "box/session.h"
 #include "box/schema.h"
 #include "bit/bit.h"
 #include "box/box.h"
@@ -262,7 +261,6 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	u8 useTempTable = 0;	/* Store SELECT results in intermediate table */
 	u8 bIdListInOrder;	/* True if IDLIST is in table order */
 	ExprList *pList = 0;	/* List of VALUES() to be inserted  */
-	struct session *user_session = current_session();
 
 	/* Register allocations */
 	int regFromSelect = 0;	/* Base register for data coming from SELECT */
@@ -308,7 +306,8 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	 * inserted into is a view
 	 */
 	struct space_def *space_def = space->def;
-	trigger = sql_triggers_exist(space_def, TK_INSERT, NULL, &tmask);
+	trigger = sql_triggers_exist(space_def, TK_INSERT, NULL,
+				     pParse->sql_flags, &tmask);
 
 	bool is_view = space_def->opts.is_view;
 	assert((trigger != NULL && tmask != 0) ||
@@ -529,7 +528,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
 
 	/* Initialize the count of rows to be inserted
 	 */
-	if (user_session->sql_flags & SQL_CountRows) {
+	if ((pParse->sql_flags & SQL_CountRows) != 0) {
 		regRowCount = ++pParse->nMem;
 		sqlVdbeAddOp2(v, OP_Integer, 0, regRowCount);
 	}
@@ -761,7 +760,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
 
 	/* Update the count of rows that are inserted
 	 */
-	if ((user_session->sql_flags & SQL_CountRows) != 0) {
+	if ((pParse->sql_flags & SQL_CountRows) != 0) {
 		sqlVdbeAddOp2(v, OP_AddImm, regRowCount, 1);
 	}
 
@@ -790,7 +789,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
  insert_end:
 
 	/* Return the number of rows inserted. */
-	if ((user_session->sql_flags & SQL_CountRows) != 0 &&
+	if ((pParse->sql_flags & SQL_CountRows) != 0 &&
 	    pParse->triggered_space == NULL) {
 		sqlVdbeAddOp2(v, OP_ResultRow, regRowCount, 1);
 		sqlVdbeSetNumCols(v, 1);
@@ -1040,6 +1039,7 @@ process_index:  ;
 			sql_set_multi_write(parse_context, true);
 			struct sql_trigger *trigger =
 				sql_triggers_exist(space->def, TK_DELETE, NULL,
+						   parse_context->sql_flags,
 						   NULL);
 			sql_generate_row_delete(parse_context, space, trigger,
 						cursor, idx_key_reg, part_count,
@@ -1130,7 +1130,6 @@ xferOptimization(Parse * pParse,	/* Parser context */
 	int addr1;		/* Loop addresses */
 	int emptyDestTest = 0;	/* Address of test for empty pDest */
 	int regData, regTupleid;	/* Registers holding data and tupleid */
-	struct session *user_session = current_session();
 	bool is_err_action_default = false;
 
 	if (pSelect == NULL)
@@ -1260,7 +1259,7 @@ xferOptimization(Parse * pParse,	/* Parser context */
 	 */
 	if (!rlist_empty(&dest->child_fk_constraint))
 		return 0;
-	if ((user_session->sql_flags & SQL_CountRows) != 0) {
+	if ((pParse->sql_flags & SQL_CountRows) != 0) {
 		return 0;	/* xfer opt does not play well with PRAGMA count_changes */
 	}
 
