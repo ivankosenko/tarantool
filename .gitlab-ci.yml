@@ -1,0 +1,103 @@
+stages:
+  - bootstrap
+  - test
+  - test_perf
+  - deploy
+
+variables:
+  BRANCH: "1.10"
+  TVER: "1.10"
+
+bootstrap_perf:
+  except:
+    - ${BRANCH}
+  stage: test
+  tags:
+    - perf
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - cp -rfp /home/aleks.tikhonov/Workspaces/runners images/.
+    - docker build --network=host -t $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_bootstrapped_${TVER} -f images/Dockerfile.ubuntu_perf images
+    - docker push $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_bootstrapped_${TVER}
+
+build_perf:
+  except:
+    - ${BRANCH}
+  stage: test_perf
+  tags:
+    - perf
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build --network=host -t $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_built_${TVER} -f images/Dockerfile.ubuntu_perf_build .
+    - docker push $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_built_${TVER}
+    - docker run --rm --network=host -i $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_built_${TVER} /bin/bash -c "/opt/runners/ycsb-benchmarking/run.sh"
+    - docker run --rm --network=host -i $CI_REGISTRY/${CI_PROJECT_PATH}:ubuntu-bionic_built_${TVER} /bin/bash -c "/opt/runners/nosqlbench-benchmarking/run.sh"
+
+bootstrap_debian:
+  except:
+    - ${BRANCH}
+  stage: bootstrap
+  tags:
+    - bootstrap
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - cp .travis.mk images/
+    - docker build --network=host -t $CI_REGISTRY/${CI_PROJECT_PATH}:debian-stretch_bootstrapped_${TVER} -f images/Dockerfile.debian images
+    - docker push $CI_REGISTRY/${CI_PROJECT_PATH}:debian-stretch_bootstrapped_${TVER}
+
+test_release:
+  except:
+    - ${BRANCH}
+  image: $CI_REGISTRY/${CI_PROJECT_PATH}:debian-stretch_bootstrapped_${TVER}
+  stage: test
+  tags:
+    - docker_test
+  script:
+    - make -f .travis.mk runtest_ubuntu
+
+test_debug:
+  except:
+    - ${BRANCH}
+  image: $CI_REGISTRY/${CI_PROJECT_PATH}:debian-stretch_bootstrapped_${TVER}
+  stage: test
+  tags:
+    - docker_test
+  script:
+    - make -f .travis.mk runtest_cov_ubuntu
+
+test_release_clang:
+  except:
+    - ${BRANCH}
+  image: $CI_REGISTRY/${CI_PROJECT_PATH}:debian-stretch_bootstrapped_${TVER}
+  stage: test
+  tags:
+    - docker_test
+  variables:
+    CC: clang
+    CXX: clang++
+  script:
+    - make -f .travis.mk runtest_ubuntu
+
+# No OS X workers.
+#  except:
+#    - ${BRANCH}
+#  image: packpack/packpack:osx
+#test_osx_release:
+#  stage: test
+#  tags:
+#    - osx
+#  script:
+#    - make -f .travis.mk test_osx
+
+pack_ubuntu_bionic:
+  except:
+    - ${BRANCH}
+  image: packpack/packpack:ubuntu-bionic
+  stage: deploy
+  tags:
+    - tarantool_ubuntu_bionic
+  script:
+    - git submodule update --recursive --init && git clone https://github.com/packpack/packpack.git packpack && make -f packpack/pack/Makefile -C . BUILDDIR=$PWD/build -j

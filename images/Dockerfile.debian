@@ -1,0 +1,4 @@
+FROM packpack/packpack:debian-stretch
+
+COPY .travis.mk .
+RUN make -f .travis.mk deps_ubuntu
