@@ -675,11 +675,10 @@ fail:
  * are duplicated as well.
  */
 static struct vy_log_record *
-vy_log_record_dup(struct region *pool, const struct vy_log_record *src)
+vy_log_record_dup(const struct vy_log_record *src,
+		  void *(*alloc_cb)(void *, size_t), void *alloc_ctx)
 {
-	size_t used = region_used(pool);
-
-	struct vy_log_record *dst = region_alloc(pool, sizeof(*dst));
+	struct vy_log_record *dst = alloc_cb(alloc_ctx, sizeof(*dst));
 	if (dst == NULL) {
 		diag_set(OutOfMemory, sizeof(*dst),
 			 "region", "struct vy_log_record");
@@ -690,7 +689,7 @@ vy_log_record_dup(struct region *pool, const struct vy_log_record *src)
 		const char *data = src->begin;
 		mp_next(&data);
 		size_t size = data - src->begin;
-		dst->begin = region_alloc(pool, size);
+		dst->begin = alloc_cb(alloc_ctx, size);
 		if (dst->begin == NULL) {
 			diag_set(OutOfMemory, size, "region",
 				 "vy_log_record::begin");
@@ -702,7 +701,7 @@ vy_log_record_dup(struct region *pool, const struct vy_log_record *src)
 		const char *data = src->end;
 		mp_next(&data);
 		size_t size = data - src->end;
-		dst->end = region_alloc(pool, size);
+		dst->end = alloc_cb(alloc_ctx, size);
 		if (dst->end == NULL) {
 			diag_set(OutOfMemory, size, "region",
 				 "struct vy_log_record");
@@ -713,21 +712,20 @@ vy_log_record_dup(struct region *pool, const struct vy_log_record *src)
 	if (src->key_def != NULL) {
 		size_t size = src->key_def->part_count *
 				sizeof(struct key_part_def);
-		dst->key_parts = region_alloc(pool, size);
+		dst->key_parts = alloc_cb(alloc_ctx, size);
 		if (dst->key_parts == NULL) {
 			diag_set(OutOfMemory, size, "region",
 				 "struct key_part_def");
 			goto err;
 		}
-		if (key_def_dump_parts(src->key_def, dst->key_parts, pool) != 0)
+		if (key_def_dump_parts(src->key_def, dst->key_parts,
+				       alloc_cb, alloc_ctx) != 0)
 			goto err;
 		dst->key_part_count = src->key_def->part_count;
 		dst->key_def = NULL;
 	}
 	return dst;
-
 err:
-	region_truncate(pool, used);
 	return NULL;
 }
 
@@ -1272,8 +1270,8 @@ vy_log_write(const struct vy_log_record *record)
 {
 	assert(latch_owner(&vy_log.latch) == fiber());
 
-	struct vy_log_record *tx_record = vy_log_record_dup(&vy_log.pool,
-							    record);
+	struct vy_log_record *tx_record = vy_log_record_dup(record,
+					region_alloc_cb, &vy_log.pool);
 	if (tx_record == NULL) {
 		diag_move(diag_get(), &vy_log.tx_diag);
 		vy_log.tx_failed = true;

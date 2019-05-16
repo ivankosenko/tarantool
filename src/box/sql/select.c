@@ -1415,7 +1415,7 @@ sql_key_info_new_from_key_def(sql *db, const struct key_def *key_def)
 	key_info->key_def = NULL;
 	key_info->refs = 1;
 	key_info->part_count = key_def->part_count;
-	key_def_dump_parts(key_def, key_info->parts, NULL);
+	key_def_dump_parts(key_def, key_info->parts, NULL, NULL);
 	return key_info;
 }
 

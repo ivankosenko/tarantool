@@ -286,7 +286,7 @@ key_def_new(const struct key_part_def *parts, uint32_t part_count)
 
 int
 key_def_dump_parts(const struct key_def *def, struct key_part_def *parts,
-		   struct region *region)
+		   void *(*alloc_cb)(void *, size_t), void *alloc_ctx)
 {
 	for (uint32_t i = 0; i < def->part_count; i++) {
 		const struct key_part *part = &def->parts[i];
@@ -297,7 +297,7 @@ key_def_dump_parts(const struct key_def *def, struct key_part_def *parts,
 		part_def->nullable_action = part->nullable_action;
 		part_def->coll_id = part->coll_id;
 		if (part->path != NULL) {
-			char *path = region_alloc(region, part->path_len + 1);
+			char *path = alloc_cb(alloc_ctx, part->path_len + 1);
 			if (path == NULL) {
 				diag_set(OutOfMemory, part->path_len + 1,
 					 "region", "part_def->path");
@@ -808,7 +808,7 @@ key_def_find_pk_in_cmp_def(const struct key_def *cmp_def,
 			 "region", "key def parts");
 		goto out;
 	}
-	if (key_def_dump_parts(pk_def, parts, region) != 0)
+	if (key_def_dump_parts(pk_def, parts, region_alloc_cb, region) != 0)
 		goto out;
 	/*
 	 * Second, update field numbers to match the primary key

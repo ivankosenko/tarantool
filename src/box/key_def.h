@@ -332,12 +332,12 @@ key_def_new(const struct key_part_def *parts, uint32_t part_count);
 
 /**
  * Dump part definitions of the given key def.
- * The region is used for allocating JSON paths, if any.
+ * The callback is used for allocating JSON paths, if any.
  * Return -1 on memory allocation error, 0 on success.
  */
 int
 key_def_dump_parts(const struct key_def *def, struct key_part_def *parts,
-		   struct region *region);
+		   void *(*alloc_cb)(void *, size_t), void *alloc_ctx);
 
 /**
  * Update 'has_optional_parts' of @a key_def with correspondence
