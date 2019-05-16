@@ -381,6 +381,16 @@ struct xlog {
 	 * compression.
 	 */
 	struct obuf obuf;
+	/**
+	 * Marks the beginning of the first row that may be discarded
+	 * on write error. See xlog_tx_set_rollback_svp().
+	 */
+	struct {
+		/** Number of non-discardable rows in the buffer. */
+		int rows;
+		/** Position of the first discardable row in the buffer. */
+		struct obuf_svp obuf_svp;
+	} rollback_svp;
 	/** The context of zstd compression */
 	ZSTD_CCtx *zctx;
 	/**
@@ -523,6 +533,27 @@ xlog_tx_commit(struct xlog *log);
  */
 void
 xlog_tx_rollback(struct xlog *log);
+
+/**
+ * Sets the position in the write buffer to rollback to in case
+ * of error or voluntary rollback. Useful for transactions that
+ * cannot be discarded even on write error, e.g. certain types
+ * of vylog transactions. Everything written before this function
+ * is called will stay in the buffer until eventually gets flushed
+ * along with another transaction or by an explicit invocation of
+ * xlog_flush(). Note, however, this doesn't guarantee that the
+ * transaction will reach the disk - the instance may be restarted
+ * before anything is written to the xlog file, in which case the
+ * data written to the buffer will be lost. The caller must be
+ * prepared for this.
+ */
+static inline void
+xlog_tx_set_rollback_svp(struct xlog *log)
+{
+	assert(!log->is_autocommit);
+	log->rollback_svp.rows = log->tx_rows;
+	log->rollback_svp.obuf_svp = obuf_create_svp(&log->obuf);
+}
 
 /**
  * Flush buffered rows and sync file

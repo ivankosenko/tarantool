@@ -770,6 +770,7 @@ xlog_init(struct xlog *xlog, const struct xlog_opts *opts)
 	xlog->is_autocommit = true;
 	obuf_create(&xlog->obuf, &cord()->slabc, XLOG_TX_AUTOCOMMIT_THRESHOLD);
 	obuf_create(&xlog->zbuf, &cord()->slabc, XLOG_TX_AUTOCOMMIT_THRESHOLD);
+	xlog->rollback_svp.obuf_svp = obuf_create_svp(&xlog->obuf);
 	if (!opts->no_compression) {
 		xlog->zctx = ZSTD_createCCtx();
 		if (xlog->zctx == NULL) {
@@ -1201,6 +1202,7 @@ xlog_tx_write(struct xlog *log)
 {
 	if (obuf_size(&log->obuf) == XLOG_FIXHEADER_SIZE)
 		return 0;
+
 	ssize_t written;
 
 	if (!log->opts.no_compression &&
@@ -1214,19 +1216,23 @@ xlog_tx_write(struct xlog *log)
 		written = -1;
 	});
 
-	obuf_reset(&log->obuf);
 	/*
 	 * Simplify recovery after a temporary write failure:
 	 * truncate the file to the best known good write
 	 * position.
 	 */
 	if (written < 0) {
+		log->tx_rows = log->rollback_svp.rows;
+		obuf_rollback_to_svp(&log->obuf, &log->rollback_svp.obuf_svp);
 		if (lseek(log->fd, log->offset, SEEK_SET) < 0 ||
 		    ftruncate(log->fd, log->offset) != 0)
 			panic_syserror("failed to truncate xlog after write error");
 		log->allocated = 0;
 		return -1;
 	}
+	obuf_reset(&log->obuf);
+	log->rollback_svp.rows = 0;
+	log->rollback_svp.obuf_svp = obuf_create_svp(&log->obuf);
 	if (log->allocated > (size_t)written)
 		log->allocated -= written;
 	else
@@ -1373,8 +1379,8 @@ void
 xlog_tx_rollback(struct xlog *log)
 {
 	log->is_autocommit = true;
-	log->tx_rows = 0;
-	obuf_reset(&log->obuf);
+	log->tx_rows = log->rollback_svp.rows;
+	obuf_rollback_to_svp(&log->obuf, &log->rollback_svp.obuf_svp);
 }
 
 /**
