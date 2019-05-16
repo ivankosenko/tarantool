@@ -171,4 +171,24 @@ s:insert({1, 3.14})
 s:insert({1, 666})
 s:drop()
 
+--
+-- Test binding optimisation.
+--
+s = box.schema.create_space('test')
+_ = s:create_index('pk', {parts = {1, 'integer'}})
+format65 = {}
+test_run:cmd("setopt delimiter ';'")
+for i = 1,66 do
+        table.insert(format65, {name='X'..i, type='integer', is_nullable = true})
+end
+test_run:cmd("setopt delimiter ''");
+s:format(format65)
+_ = box.space._ck_constraint:insert({'X1is666andX65is666', s.id, false, 'X1 == 666 and X65 == 666 and X63 IS NOT NULL', 'SQL'})
+s:insert(s:frommap({X1 = 1, X65 = 1}))
+s:insert(s:frommap({X1 = 666, X65 = 1}))
+s:insert(s:frommap({X1 = 1, X65 = 666}))
+s:insert(s:frommap({X1 = 666, X65 = 666}))
+s:insert(s:frommap({X1 = 666, X65 = 666, X63 = 1}))
+s:drop()
+
 test_run:cmd("clear filter")

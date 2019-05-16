@@ -46,17 +46,21 @@ const char *ck_constraint_language_strs[] = {"SQL"};
  * tree traversal.
  * @param ck_constraint Check constraint object to update.
  * @param space_def Space definition to use.
+ * @param column_mask[out] The "smart" column mask of fields are
+ *                         referenced by AST.
  * @retval 0 on success.
  * @retval -1 on error.
  */
 static int
 ck_constraint_resolve_field_names(struct Expr *expr,
-				  struct space_def *space_def)
+				  struct space_def *space_def,
+				  uint64_t *column_mask)
 {
 	struct Parse parser;
 	sql_parser_create(&parser, sql_get(), default_flags);
 	parser.parse_only = true;
-	sql_resolve_self_reference(&parser, space_def, NC_IsCheck, expr, NULL);
+	sql_resolve_self_reference(&parser, space_def, NC_IsCheck, expr, NULL,
+				   column_mask);
 	int rc = parser.is_aborted ? -1 : 0;
 	sql_parser_destroy(&parser);
 	return rc;
@@ -75,6 +79,8 @@ ck_constraint_resolve_field_names(struct Expr *expr,
  *             given @ck_constraint_def, see for
  *             (sql_expr_compile +
  *              ck_constraint_resolve_space_def) implementation.
+ * @param column_mask The "smart" column mask of fields are
+ *                    referenced by @a expr.
  * @param space_def The space definition of the space this check
  *                  constraint is constructed for.
  * @retval not NULL sql_stmt program pointer on success.
@@ -82,7 +88,8 @@ ck_constraint_resolve_field_names(struct Expr *expr,
  */
 static struct sql_stmt *
 ck_constraint_program_compile(struct ck_constraint_def *ck_constraint_def,
-			      struct Expr *expr, struct space_def *space_def)
+			      struct Expr *expr, uint64_t column_mask,
+			      struct space_def *space_def)
 {
 	struct sql *db = sql_get();
 	struct Parse parser;
@@ -98,10 +105,24 @@ ck_constraint_program_compile(struct ck_constraint_def *ck_constraint_def,
 	 * bind tuple fields there before execution.
 	 */
 	uint32_t field_count = space_def->field_count;
+	/*
+	 * Use column mask to prepare binding only for
+	 * referenced fields.
+	 */
 	int bind_tuple_reg = sqlGetTempRange(&parser, field_count);
-	for (uint32_t i = 0; i < field_count; i++) {
+	struct bit_iterator it;
+	bit_iterator_init(&it, &column_mask, sizeof(uint64_t), true);
+	size_t used_fieldno = bit_iterator_next(&it);
+	for (; used_fieldno < SIZE_MAX; used_fieldno = bit_iterator_next(&it)) {
 		sqlVdbeAddOp2(v, OP_Variable, ++parser.nVar,
-			      bind_tuple_reg + i);
+			      bind_tuple_reg + used_fieldno);
+	}
+	if (column_mask_fieldno_is_set(column_mask, 63)) {
+		used_fieldno = 64;
+		for (; used_fieldno < (size_t)field_count; used_fieldno++) {
+			sqlVdbeAddOp2(v, OP_Variable, ++parser.nVar,
+				      bind_tuple_reg + used_fieldno);
+		}
 	}
 	/* Generate ck constraint test code. */
 	vdbe_emit_ck_constraint(&parser, expr, ck_constraint_def->name,
@@ -142,6 +163,13 @@ ck_constraint_program_run(struct ck_constraint *ck_constraint,
 	 */
 	struct space *space = space_by_id(ck_constraint->space_id);
 	assert(space != NULL);
+	/* Use column mask to bind only referenced fields. */
+	struct bit_iterator it;
+	bit_iterator_init(&it, &ck_constraint->column_mask,
+			  sizeof(uint64_t), true);
+	size_t used_fieldno = bit_iterator_next(&it);
+	if (used_fieldno == SIZE_MAX)
+		return 0;
 	/*
 	 * When last format fields are nullable, they are
 	 * 'optional' i.e. they may not be present in the tuple.
@@ -149,23 +177,46 @@ ck_constraint_program_run(struct ck_constraint *ck_constraint,
 	uint32_t tuple_field_count = mp_decode_array(&new_tuple);
 	uint32_t field_count =
 		MIN(tuple_field_count, space->def->field_count);
-	for (uint32_t i = 0; i < field_count; i++) {
+	uint32_t bind_pos = 1;
+	for (uint32_t fieldno = 0; fieldno < field_count; fieldno++) {
+		if (used_fieldno == SIZE_MAX &&
+		    !column_mask_fieldno_is_set(ck_constraint->column_mask,
+						63)) {
+			/* No more required fields are left. */
+			break;
+		}
+		if (used_fieldno != SIZE_MAX &&
+		    (size_t)fieldno < used_fieldno) {
+			/*
+			 * Skip unused fields is mentioned in
+			 * column mask.
+			 */
+			mp_next(&new_tuple);
+			continue;
+		}
 		struct sql_bind bind;
-		if (sql_bind_decode(&bind, i + 1, &new_tuple) != 0 ||
-		    sql_bind_column(ck_constraint->stmt, &bind, i + 1) != 0) {
+		if (sql_bind_decode(&bind, bind_pos, &new_tuple) != 0 ||
+		    sql_bind_column(ck_constraint->stmt, &bind, bind_pos) != 0) {
 			diag_set(ClientError, ER_CK_CONSTRAINT_FAILED,
 				 ck_constraint->def->name,
 				 ck_constraint->def->expr_str);
 			return -1;
 		}
+		bind_pos++;
+		used_fieldno = bit_iterator_next(&it);
 	}
-	for (uint32_t i = field_count; i < space->def->field_count; i++) {
+	if (used_fieldno != SIZE_MAX && field_count < space->def->field_count) {
 		struct sql_bind bind = {.bytes = 1, .type = MP_NIL};
-		if (sql_bind_column(ck_constraint->stmt, &bind, i + 1) != 0) {
-			diag_set(ClientError, ER_CK_CONSTRAINT_FAILED,
-				 ck_constraint->def->name,
-				 ck_constraint->def->expr_str);
-			return -1;
+		for (; used_fieldno != SIZE_MAX;
+		     used_fieldno = bit_iterator_next(&it)) {
+			if (sql_bind_column(ck_constraint->stmt, &bind,
+					    bind_pos) != 0) {
+				diag_set(ClientError, ER_CK_CONSTRAINT_FAILED,
+					 ck_constraint->def->name,
+					 ck_constraint->def->expr_str);
+				return -1;
+			}
+			bind_pos++;
 		}
 	}
 	/* Checks VDBE can't expire, reset expired flag and go. */
@@ -229,7 +280,8 @@ ck_constraint_new(struct ck_constraint_def *ck_constraint_def,
 		sql_expr_compile(sql_get(), ck_constraint_def->expr_str,
 				 strlen(ck_constraint_def->expr_str));
 	if (expr == NULL ||
-	    ck_constraint_resolve_field_names(expr, space_def) != 0) {
+	    ck_constraint_resolve_field_names(expr, space_def,
+					&ck_constraint->column_mask) != 0) {
 		diag_set(ClientError, ER_CREATE_CK_CONSTRAINT,
 			 ck_constraint_def->name,
 			 box_error_message(box_error_last()));
@@ -237,6 +289,7 @@ ck_constraint_new(struct ck_constraint_def *ck_constraint_def,
 	}
 	ck_constraint->stmt =
 		ck_constraint_program_compile(ck_constraint_def, expr,
+					      ck_constraint->column_mask,
 					      space_def);
 	if (ck_constraint->stmt == NULL)
 		goto error;

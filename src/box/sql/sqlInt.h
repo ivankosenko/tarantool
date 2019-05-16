@@ -2349,6 +2349,12 @@ struct NameContext {
 	int nRef;		/* Number of names resolved by this context */
 	int nErr;		/* Number of errors encountered while resolving names */
 	u16 ncFlags;		/* Zero or more NC_* flags defined below */
+	/**
+	 * The "smart" column mask of fields are referenced
+	 * by AST. Then the last bit of the mask is set when
+	 * field #63 and greater has referenced.
+	 */
+	uint64_t column_mask;
 };
 
 /*

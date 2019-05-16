@@ -2198,7 +2198,7 @@ index_fill_def(struct Parse *parse, struct index *index,
 	for (int i = 0; i < expr_list->nExpr; i++) {
 		struct Expr *expr = expr_list->a[i].pExpr;
 		sql_resolve_self_reference(parse, space_def, NC_IdxExpr,
-					   expr, 0);
+					   expr, NULL, NULL);
 		if (parse->is_aborted)
 			goto cleanup;
 

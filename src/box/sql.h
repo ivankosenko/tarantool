@@ -279,11 +279,14 @@ sql_expr_list_append(struct sql *db, struct ExprList *expr_list,
  * @param type NC_IsCheck or NC_IdxExpr.
  * @param expr Expression to resolve.  May be NULL.
  * @param expr_list Expression list to resolve.  May be NUL.
+ * @param[out] column_mask The "smart" column mask of fields are
+ *                         referenced by AST.
  */
 void
 sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 			   int type, struct Expr *expr,
-			   struct ExprList *expr_list);
+			   struct ExprList *expr_list,
+			   uint64_t *column_mask);
 
 /**
  * Initialize a new parser object.

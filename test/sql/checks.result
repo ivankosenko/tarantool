@@ -496,6 +496,65 @@ s:insert({1, 666})
 s:drop()
 ---
 ...
+--
+-- Test binding optimisation.
+--
+s = box.schema.create_space('test')
+---
+...
+_ = s:create_index('pk', {parts = {1, 'integer'}})
+---
+...
+format65 = {}
+---
+...
+test_run:cmd("setopt delimiter ';'")
+---
+- true
+...
+for i = 1,66 do
+        table.insert(format65, {name='X'..i, type='integer', is_nullable = true})
+end
+test_run:cmd("setopt delimiter ''");
+---
+...
+s:format(format65)
+---
+...
+_ = box.space._ck_constraint:insert({'X1is666andX65is666', s.id, false, 'X1 == 666 and X65 == 666 and X63 IS NOT NULL', 'SQL'})
+---
+...
+s:insert(s:frommap({X1 = 1, X65 = 1}))
+---
+- error: 'Check constraint failed ''X1is666andX65is666'': X1 == 666 and X65 == 666
+    and X63 IS NOT NULL'
+...
+s:insert(s:frommap({X1 = 666, X65 = 1}))
+---
+- error: 'Check constraint failed ''X1is666andX65is666'': X1 == 666 and X65 == 666
+    and X63 IS NOT NULL'
+...
+s:insert(s:frommap({X1 = 1, X65 = 666}))
+---
+- error: 'Check constraint failed ''X1is666andX65is666'': X1 == 666 and X65 == 666
+    and X63 IS NOT NULL'
+...
+s:insert(s:frommap({X1 = 666, X65 = 666}))
+---
+- error: 'Check constraint failed ''X1is666andX65is666'': X1 == 666 and X65 == 666
+    and X63 IS NOT NULL'
+...
+s:insert(s:frommap({X1 = 666, X65 = 666, X63 = 1}))
+---
+- [666, null, null, null, null, null, null, null, null, null, null, null, null, null,
+  null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+  null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+  null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+  null, null, null, null, null, null, 1, null, 666]
+...
+s:drop()
+---
+...
 test_run:cmd("clear filter")
 ---
 - true

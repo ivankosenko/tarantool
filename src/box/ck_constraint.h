@@ -89,6 +89,12 @@ struct ck_constraint {
 	 */
 	struct sql_stmt *stmt;
 	/**
+	 * The "smart" column mask of fields are referenced by
+	 * AST. Then the last bit of the mask is set when field
+	 * #63 and greater has referenced.
+	 */
+	uint64_t column_mask;
+	/**
 	 * Trigger object executing check constraint before
 	 * insert and replace operations.
 	 */

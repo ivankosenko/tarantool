@@ -556,8 +556,11 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 	case TK_ID:{
 			if ((pNC->ncFlags & NC_AllowAgg) != 0)
 				pNC->ncFlags |= NC_HasUnaggregatedId;
-			return lookupName(pParse, 0, pExpr->u.zToken, pNC,
-					  pExpr);
+			int rc = lookupName(pParse, 0, pExpr->u.zToken, pNC,
+					    pExpr);
+			column_mask_set_fieldno(&pNC->column_mask,
+						pExpr->iColumn);
+			return rc;
 		}
 
 		/* A table name and column name:     ID.ID
@@ -583,8 +586,11 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 				zTable = pRight->pLeft->u.zToken;
 				zColumn = pRight->pRight->u.zToken;
 			}
-			return lookupName(pParse, zTable, zColumn, pNC,
-					  pExpr);
+			int rc = lookupName(pParse, zTable, zColumn, pNC,
+					    pExpr);
+			column_mask_set_fieldno(&pNC->column_mask,
+						pExpr->iColumn);
+			return rc;
 		}
 
 		/* Resolve function names
@@ -1612,7 +1618,7 @@ sqlResolveSelectNames(Parse * pParse,	/* The parser context */
 void
 sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 			   int type, struct Expr *expr,
-			   struct ExprList *expr_list)
+			   struct ExprList *expr_list, uint64_t *column_mask)
 {
 	/* Fake SrcList for parser->create_table_def */
 	SrcList sSrc;
@@ -1632,8 +1638,11 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 	sNC.pParse = parser;
 	sNC.pSrcList = &sSrc;
 	sNC.ncFlags = type;
+	sNC.column_mask = 0;
 	if (sqlResolveExprNames(&sNC, expr) != 0)
 		return;
 	if (expr_list != NULL)
 		sqlResolveExprListNames(&sNC, expr_list);
+	if (column_mask != NULL)
+		*column_mask = sNC.column_mask;
 }
