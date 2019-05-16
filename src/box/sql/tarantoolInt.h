@@ -46,7 +46,7 @@ int tarantoolsqlDelete(BtCursor * pCur, u8 flags);
  * @param key Key of record to be deleted.
  * @param key_size Size of key.
  *
- * @retval SQL_OK on success, SQL_TARANTOOL_ERROR otherwise.
+ * @retval 0 on success, -1 otherwise.
  */
 int
 sql_delete_by_key(struct space *space, uint32_t iid, char *key,
@@ -59,7 +59,7 @@ int tarantoolsqlClearTable(struct space *space, uint32_t *tuple_count);
  * @param space_id Table's space identifier.
  * @param new_name new name of table
  *
- * @retval 0 on success, SQL_TARANTOOL_ERROR otherwise.
+ * @retval 0 on success, -1 otherwise.
  */
 int
 sql_rename_table(uint32_t space_id, const char *new_name);

@@ -2830,10 +2830,10 @@ case OP_Count: {         /* out2 */
 	assert(pCrsr);
 	nEntry = 0;  /* Not needed.  Only used to silence a warning. */
 	if (pCrsr->curFlags & BTCF_TaCursor) {
-		if (tarantoolsqlCount(pCrsr, &nEntry) != SQL_OK)
+		if (tarantoolsqlCount(pCrsr, &nEntry) != 0)
 			goto abort_due_to_error;
 	} else if (pCrsr->curFlags & BTCF_TEphemCursor) {
-		if (tarantoolsqlEphemeralCount(pCrsr, &nEntry) != SQL_OK)
+		if (tarantoolsqlEphemeralCount(pCrsr, &nEntry) != 0)
 			goto abort_due_to_error;
 	} else {
 		unreachable();
@@ -3470,7 +3470,7 @@ case OP_SeekGT: {       /* jump, in3 */
 #endif
 	r.eqSeen = 0;
 	r.opcode = oc;
-	if (sqlCursorMovetoUnpacked(pC->uc.pCursor, &r, &res) != SQL_OK)
+	if (sqlCursorMovetoUnpacked(pC->uc.pCursor, &r, &res) != 0)
 		goto abort_due_to_error;
 	if (eqOnly && r.eqSeen==0) {
 		assert(res!=0);
@@ -3483,7 +3483,7 @@ case OP_SeekGT: {       /* jump, in3 */
 	if (oc>=OP_SeekGE) {  assert(oc==OP_SeekGE || oc==OP_SeekGT);
 		if (res<0 || (res==0 && oc==OP_SeekGT)) {
 			res = 0;
-			if (sqlCursorNext(pC->uc.pCursor, &res) != SQL_OK)
+			if (sqlCursorNext(pC->uc.pCursor, &res) != 0)
 				goto abort_due_to_error;
 		} else {
 			res = 0;
@@ -3492,7 +3492,7 @@ case OP_SeekGT: {       /* jump, in3 */
 		assert(oc==OP_SeekLT || oc==OP_SeekLE);
 		if (res>0 || (res==0 && oc==OP_SeekLT)) {
 			res = 0;
-			if (sqlCursorPrevious(pC->uc.pCursor, &res) != SQL_OK)
+			if (sqlCursorPrevious(pC->uc.pCursor, &res) != 0)
 				goto abort_due_to_error;
 		} else {
 			/* res might be negative because the table is empty.  Check to
@@ -3634,12 +3634,13 @@ case OP_Found: {        /* jump, in3 */
 			}
 		}
 	}
-	rc = sqlCursorMovetoUnpacked(pC->uc.pCursor, pIdxKey, &res);
+	if (sqlCursorMovetoUnpacked(pC->uc.pCursor, pIdxKey, &res) != 0) {
+		if (pFree != NULL)
+			sqlDbFree(db, pFree);
+		goto abort_due_to_error;
+	}
 	if (pFree)
 		sqlDbFree(db, pFree);
-	assert(rc == SQL_OK || rc == SQL_TARANTOOL_ERROR);
-	if (rc != SQL_OK)
-		goto abort_due_to_error;
 	pC->seekResult = res;
 	alreadyExists = (res==0);
 	pC->nullRow = 1-alreadyExists;
@@ -3800,9 +3801,11 @@ case OP_Delete: {
 	assert(pBtCur->eState == CURSOR_VALID);
 
 	if (pBtCur->curFlags & BTCF_TaCursor) {
-		rc = tarantoolsqlDelete(pBtCur, 0);
+		if (tarantoolsqlDelete(pBtCur, 0) != 0)
+			rc = SQL_TARANTOOL_ERROR;
 	} else if (pBtCur->curFlags & BTCF_TEphemCursor) {
-		rc = tarantoolsqlEphemeralDelete(pBtCur);
+		if (tarantoolsqlEphemeralDelete(pBtCur) != 0)
+			rc = SQL_TARANTOOL_ERROR;
 	} else {
 		unreachable();
 	}
@@ -4016,7 +4019,8 @@ case OP_Last: {        /* jump */
 	pC->seekOp = OP_Last;
 #endif
 	if (pOp->p3==0 || !sqlCursorIsValidNN(pCrsr)) {
-		rc = tarantoolsqlLast(pCrsr, &res);
+		if (tarantoolsqlLast(pCrsr, &res) != 0)
+			rc = SQL_TARANTOOL_ERROR;
 		pC->nullRow = (u8)res;
 		pC->cacheStatus = CACHE_STALE;
 		if (rc) goto abort_due_to_error;
@@ -4094,7 +4098,7 @@ case OP_Rewind: {        /* jump */
 		assert(pC->eCurType==CURTYPE_TARANTOOL);
 		pCrsr = pC->uc.pCursor;
 		assert(pCrsr);
-		if (tarantoolsqlFirst(pCrsr, &res) != SQL_OK)
+		if (tarantoolsqlFirst(pCrsr, &res) != 0)
 			rc = SQL_TARANTOOL_ERROR;
 		pC->cacheStatus = CACHE_STALE;
 		if (rc != SQL_OK)
@@ -4287,16 +4291,16 @@ case OP_IdxInsert: {
 	if (space->def->id != 0) {
 		/* Make sure that memory has been allocated on region. */
 		assert(aMem[pOp->p1].flags & MEM_Ephem);
-		if (pOp->opcode == OP_IdxInsert) {
-			rc = tarantoolsqlInsert(space, pIn2->z,
-						    pIn2->z + pIn2->n);
-		} else {
-			rc = tarantoolsqlReplace(space, pIn2->z,
-						     pIn2->z + pIn2->n);
-		}
+		if (pOp->opcode == OP_IdxInsert &&
+		    tarantoolsqlInsert(space, pIn2->z, pIn2->z + pIn2->n) != 0)
+			rc = SQL_TARANTOOL_ERROR;
+		if (pOp->opcode == OP_IdxReplace &&
+		    tarantoolsqlReplace(space, pIn2->z, pIn2->z + pIn2->n) != 0)
+			rc = SQL_TARANTOOL_ERROR;
 	} else {
-		rc = tarantoolsqlEphemeralInsert(space, pIn2->z,
-						     pIn2->z + pIn2->n);
+		if (tarantoolsqlEphemeralInsert(space, pIn2->z,
+						pIn2->z + pIn2->n) != 0)
+			rc = SQL_TARANTOOL_ERROR;
 	}
 
 	if (pOp->p5 & OPFLAG_OE_IGNORE) {
@@ -4460,7 +4464,7 @@ case OP_SDelete: {
 	struct space *space = space_by_id(pOp->p1);
 	assert(space != NULL);
 	assert(space_is_system(space));
-	if (sql_delete_by_key(space, 0, pIn2->z, pIn2->n) != SQL_OK)
+	if (sql_delete_by_key(space, 0, pIn2->z, pIn2->n) != 0)
 		goto abort_due_to_error;
 	if (pOp->p5 & OPFLAG_NCHANGE)
 		p->nChange++;
@@ -4494,15 +4498,15 @@ case OP_IdxDelete: {
 	r.default_rc = 0;
 	r.aMem = &aMem[pOp->p2];
 	r.opcode = OP_IdxDelete;
-	if (sqlCursorMovetoUnpacked(pCrsr, &r, &res) != SQL_OK)
+	if (sqlCursorMovetoUnpacked(pCrsr, &r, &res) != 0)
 		goto abort_due_to_error;
 	if (res==0) {
 		assert(pCrsr->eState == CURSOR_VALID);
 		if (pCrsr->curFlags & BTCF_TaCursor) {
-			if (tarantoolsqlDelete(pCrsr, 0) != SQL_OK)
+			if (tarantoolsqlDelete(pCrsr, 0) != 0)
 				goto abort_due_to_error;
 		} else if (pCrsr->curFlags & BTCF_TEphemCursor) {
-			if (tarantoolsqlEphemeralDelete(pCrsr) != SQL_OK)
+			if (tarantoolsqlEphemeralDelete(pCrsr) != 0)
 				goto abort_due_to_error;
 		} else {
 			unreachable();
@@ -4621,7 +4625,7 @@ case OP_Clear: {
 			goto abort_due_to_error;
 	} else {
 		uint32_t tuple_count;
-		if (tarantoolsqlClearTable(space, &tuple_count) != SQL_OK)
+		if (tarantoolsqlClearTable(space, &tuple_count) != 0)
 			goto abort_due_to_error;
 		if ((pOp->p5 & OPFLAG_NCHANGE) != 0)
 			p->nChange += tuple_count;
@@ -4648,7 +4652,7 @@ case OP_ResetSorter: {
 	} else {
 		assert(pC->eCurType==CURTYPE_TARANTOOL);
 		assert(pC->uc.pCursor->curFlags & BTCF_TEphemCursor);
-		if (tarantoolsqlEphemeralClearTable(pC->uc.pCursor) != SQL_OK)
+		if (tarantoolsqlEphemeralClearTable(pC->uc.pCursor) != 0)
 			goto abort_due_to_error;
 	}
 	break;
@@ -4682,7 +4686,7 @@ case OP_RenameTable: {
 	zNewTableName = pOp->p4.z;
 	zOldTableName = sqlDbStrNDup(db, zOldTableName,
 					 sqlStrlen30(zOldTableName));
-	if (sql_rename_table(space_id, zNewTableName) != SQL_OK)
+	if (sql_rename_table(space_id, zNewTableName) != 0)
 		goto abort_due_to_error;
 	/*
 	 * Rebuild 'CREATE TRIGGER' expressions of all triggers
@@ -4703,7 +4707,7 @@ case OP_RenameTable: {
 		 * try again.
 		 */
 		if (tarantoolsqlRenameTrigger(trigger->zName, zOldTableName,
-					      zNewTableName) != SQL_OK)
+					      zNewTableName) != 0)
 			goto abort_due_to_error;
 		trigger = next_trigger;
 	}
@@ -5244,7 +5248,7 @@ case OP_IncMaxid: {
 	assert(pOp->p1 > 0);
 	pOut = &aMem[pOp->p1];
 
-	if (tarantoolsqlIncrementMaxid((uint64_t*) &pOut->u.i) != SQL_OK)
+	if (tarantoolsqlIncrementMaxid((uint64_t*) &pOut->u.i) != 0)
 		goto abort_due_to_error;
 	pOut->flags = MEM_Int;
 	break;
