@@ -3895,8 +3895,6 @@ FuncDef *sqlFindFunction(sql *, const char *, int, u8);
 void sqlRegisterBuiltinFunctions(void);
 void sqlRegisterDateTimeFunctions(void);
 void sqlRegisterPerConnectionBuiltinFunctions(sql *);
-int sqlSafetyCheckOk(sql *);
-int sqlSafetyCheckSickOrOk(sql *);
 
 /**
  * Evaluate a view and store its result in an ephemeral table.
@@ -4416,8 +4414,6 @@ sql_dec_or_hex_to_i64(const char *z, int64_t *val);
 
 void *sqlHexToBlob(sql *, const char *z, int n);
 u8 sqlHexToInt(int h);
-
-const char *sqlErrStr(int);
 
 /**
  * Return the collation sequence for the expression pExpr. If

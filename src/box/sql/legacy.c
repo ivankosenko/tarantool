@@ -65,8 +65,7 @@ sql_exec(sql * db,	/* The database on which the SQL executes */
 	int callbackIsInit;	/* True if callback data is initialized */
 	struct session *user_session = current_session();
 
-	if (!sqlSafetyCheckOk(db))
-		return SQL_MISUSE;
+	assert(db != NULL);
 	if (zSql == 0)
 		zSql = "";
 
