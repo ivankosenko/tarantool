@@ -50,6 +50,7 @@
 #include "txn.h"
 #include "space.h"
 #include "schema.h"
+#include "gc.h"
 #include "xrow.h"
 #include "vy_lsm.h"
 #include "vy_log.h"
@@ -197,6 +198,11 @@ struct vy_task {
 	 * need to remember the slices we are compacting.
 	 */
 	struct vy_slice *first_slice, *last_slice;
+	/**
+	 * For compaction tasks: signature of the last checkpoint
+	 * at the time of task creation.
+	 */
+	int64_t gc_lsn;
 	/**
 	 * Index options may be modified while a task is in
 	 * progress so we save them here to safely access them
@@ -1459,6 +1465,7 @@ vy_task_compaction_complete(struct vy_task *task)
 	struct vy_lsm *lsm = task->lsm;
 	struct vy_range *range = task->range;
 	struct vy_run *new_run = task->new_run;
+	int64_t gc_lsn = task->gc_lsn;
 	double compaction_time = ev_monotonic_now(loop()) - task->start_time;
 	struct vy_disk_stmt_counter compaction_output = new_run->count;
 	struct vy_disk_stmt_counter compaction_input;
@@ -1510,7 +1517,6 @@ vy_task_compaction_complete(struct vy_task *task)
 		if (slice == last_slice)
 			break;
 	}
-	int64_t gc_lsn = vy_log_signature();
 	rlist_foreach_entry(run, &unused_runs, in_unused)
 		vy_log_drop_run(run->id, gc_lsn);
 	if (new_slice != NULL) {
@@ -1708,6 +1714,10 @@ vy_task_compaction_new(struct vy_scheduler *scheduler, struct vy_worker *worker,
 		new_run->dump_count = dump_count;
 
 	range->needs_compaction = false;
+
+	struct gc_checkpoint *checkpoint = gc_last_checkpoint();
+	if (checkpoint != NULL)
+		task->gc_lsn = vclock_sum(&checkpoint->vclock);
 
 	task->range = range;
 	task->new_run = new_run;

@@ -459,12 +459,6 @@ void
 vy_log_collect_garbage(const struct vclock *vclock);
 
 /**
- * Return the signature of the newest vylog to the time.
- */
-int64_t
-vy_log_signature(void);
-
-/**
  * Return the path to the log file that needs to be backed up
  * in order to recover to checkpoint @vclock.
  */
@@ -569,7 +563,8 @@ enum vy_recovery_flag {
 
 /**
  * Create a recovery context from the metadata log created
- * by checkpoint with the given signature.
+ * by checkpoint with the given signature. Pass -1 to load
+ * the most recent log file.
  *
  * For valid values of @flags, see vy_recovery_flag.
  *

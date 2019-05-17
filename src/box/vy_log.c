@@ -1190,12 +1190,6 @@ vy_log_collect_garbage(const struct vclock *vclock)
 	xdir_collect_garbage(&vy_log.dir, vclock_sum(vclock), XDIR_GC_ASYNC);
 }
 
-int64_t
-vy_log_signature(void)
-{
-	return vclock_sum(&vy_log.last_checkpoint);
-}
-
 const char *
 vy_log_backup_path(const struct vclock *vclock)
 {
@@ -2185,7 +2179,7 @@ vy_recovery_commit_rebootstrap(struct vy_recovery *recovery)
 			 * The files will be removed when the current
 			 * checkpoint is purged by garbage collector.
 			 */
-			lsm->drop_lsn = vy_log_signature();
+			lsm->drop_lsn = vclock_sum(&vy_log.last_checkpoint);
 		}
 	}
 }
@@ -2382,6 +2376,9 @@ int
 vy_recovery_new_f(struct cbus_call_msg *base)
 {
 	struct vy_recovery_msg *msg = (struct vy_recovery_msg *)base;
+
+	if (msg->signature < 0)
+		msg->signature = vclock_sum(&vy_log.last_checkpoint);
 
 	msg->recovery = vy_recovery_load(msg->signature, msg->flags);
 	if (msg->recovery == NULL)
