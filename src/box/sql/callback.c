@@ -37,7 +37,6 @@
 
 #include "box/coll_id_cache.h"
 #include "sqlInt.h"
-#include "box/session.h"
 
 struct coll *
 sql_get_coll_seq(Parse *parser, const char *name, uint32_t *coll_id)
@@ -173,7 +172,7 @@ sqlInsertBuiltinFuncs(FuncDef * aDef,	/* List of global functions to be inserted
 
 struct FuncDef *
 sql_find_function(struct sql *db, const char *func_name, int arg_count,
-		  bool is_create)
+		  bool is_builtin, bool is_create)
 {
 	assert(arg_count >= -2);
 	assert(arg_count >= -1 || !is_create);
@@ -185,9 +184,6 @@ sql_find_function(struct sql *db, const char *func_name, int arg_count,
 	int func_score = 0;
 	/* Best match found so far. */
 	struct FuncDef *func = NULL;
-
-	struct session *user_session = current_session();
-	bool is_builtin = (user_session->sql_flags & SQL_PreferBuiltin) != 0;
 	if (is_builtin)
 		goto lookup_for_builtin;
 
@@ -207,10 +203,6 @@ sql_find_function(struct sql *db, const char *func_name, int arg_count,
 	/**
 	 * If no match is found, search the built-in functions.
 	 *
-	 * If the SQL_PreferBuiltin flag is set, then search the
-	 * built-in functions even if a prior app-defined function
-	 * was found.  And give priority to built-in functions.
-	 *
 	 * Except, if is_create is true, that means that we are
 	 * trying to install a new function. Whatever FuncDef
 	 * structure is returned it will have fields overwritten
@@ -219,7 +211,7 @@ sql_find_function(struct sql *db, const char *func_name, int arg_count,
 	 * So we must not search for built-ins when creating a
 	 * new function.
 	 */
-	if (!is_create && (func == NULL || is_builtin)) {
+	if (!is_create && func == NULL) {
 lookup_for_builtin:
 		func_score = 0;
 		int h = sql_builtin_func_name_hash(func_name, func_name_len);

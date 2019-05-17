@@ -1245,7 +1245,7 @@ valueFromFunction(sql * db,	/* The database connection */
 	pList = p->x.pList;
 	if (pList)
 		nVal = pList->nExpr;
-	pFunc = sql_find_function(db, p->u.zToken, nVal, false);
+	pFunc = sql_find_function(db, p->u.zToken, nVal, false, false);
 	assert(pFunc);
 	if ((pFunc->funcFlags & (SQL_FUNC_CONSTANT | SQL_FUNC_SLOCHNG)) ==
 	    0 || (pFunc->funcFlags & SQL_FUNC_NEEDCOLL)

@@ -428,13 +428,19 @@ sqlCreateFunc(sql * db,
 	assert(SQL_FUNC_CONSTANT == SQL_DETERMINISTIC);
 	extraFlags = flags & SQL_DETERMINISTIC;
 
-
+	/* Ensure there is no builtin function with this name. */
+	p = sql_find_function(db, zFunctionName, -2, true, false);
+	if (p != NULL) {
+		diag_set(ClientError, ER_SQL, "cannot create a function with "
+			 "a signature that coincides builtin function");
+		return SQL_TARANTOOL_ERROR;
+	}
 	/* Check if an existing function is being overridden or deleted. If so,
 	 * and there are active VMs, then return SQL_BUSY. If a function
 	 * is being overridden/deleted but there are no active VMs, allow the
 	 * operation to continue but invalidate all precompiled statements.
 	 */
-	p = sql_find_function(db, zFunctionName, nArg, false);
+	p = sql_find_function(db, zFunctionName, nArg, false, false);
 	if (p && p->nArg == nArg) {
 		if (db->nVdbeActive) {
 			sqlErrorWithMsg(db, SQL_BUSY,
@@ -446,7 +452,7 @@ sqlCreateFunc(sql * db,
 		}
 	}
 
-	p = sql_find_function(db, zFunctionName, nArg, true);
+	p = sql_find_function(db, zFunctionName, nArg, false, true);
 	if (p == NULL)
 		return SQL_TARANTOOL_ERROR;
 

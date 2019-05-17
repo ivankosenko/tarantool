@@ -287,7 +287,7 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 					     p->x.pList->nExpr;
 			struct FuncDef *func =
 				sql_find_function(parse->db, p->u.zToken,
-						  arg_count, false);
+						  arg_count, false, false);
 			if (func == NULL)
 				break;
 			if (func->is_coll_derived) {
@@ -3991,11 +3991,11 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			nFarg = pFarg ? pFarg->nExpr : 0;
 			assert(!ExprHasProperty(pExpr, EP_IntValue));
 			zId = pExpr->u.zToken;
-			pDef = sql_find_function(db, zId, nFarg, false);
+			pDef = sql_find_function(db, zId, nFarg, false, false);
 #ifdef SQL_ENABLE_UNKNOWN_SQL_FUNCTION
 			if (pDef == 0 && pParse->explain) {
 				pDef = sql_find_function(db, "unknown", nFarg,
-							 false);
+							 false, false);
 			}
 #endif
 			if (pDef == 0 || pDef->xFinalize != 0) {
@@ -5466,7 +5466,7 @@ analyzeAggregate(Walker * pWalker, Expr * pExpr)
 							pExpr->u.zToken,
 							pExpr->x.pList ?
 							pExpr->x.pList->nExpr : 0,
-							false);
+							false, false);
 						if (pExpr->flags & EP_Distinct) {
 							pItem->iDistinct =
 								pParse->nTab++;
