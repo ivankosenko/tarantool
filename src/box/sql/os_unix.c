@@ -2092,7 +2092,7 @@ sql_os_init(void)
 	/* Register all VFSes defined in the aVfs[] array. */
 	for (unsigned int i = 0; i < (sizeof(aVfs) / sizeof(sql_vfs)); i++)
 		sql_vfs_register(&aVfs[i], i == 0);
-	return SQL_OK;
+	return 0;
 }
 
 /*

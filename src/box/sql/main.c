@@ -99,7 +99,7 @@ char *sql_data_directory = 0;
 int
 sql_initialize(void)
 {
-	int rc = SQL_OK;
+	int rc = 0;
 
 	/* If the following assert() fails on some obscure processor/compiler
 	 * combination, the work-around is to set the correct pointer
@@ -113,18 +113,11 @@ sql_initialize(void)
 	 * of this routine.
 	 */
 	if (sqlGlobalConfig.isInit)
-		return SQL_OK;
+		return 0;
 
 	if (!sqlGlobalConfig.isMallocInit)
 		sqlMallocInit();
-	if (rc == SQL_OK)
-		sqlGlobalConfig.isMallocInit = 1;
-
-	/* If rc is not SQL_OK at this point, then the malloc
-	 * subsystem could not be initialized.
-	 */
-	if (rc != SQL_OK)
-		return rc;
+	sqlGlobalConfig.isMallocInit = 1;
 
 	/* Do the rest of the initialization
 	 * that we will be able to handle recursive calls into
@@ -144,12 +137,9 @@ sql_initialize(void)
 		memset(&sqlBuiltinFunctions, 0,
 		       sizeof(sqlBuiltinFunctions));
 		sqlRegisterBuiltinFunctions();
-		if (rc == SQL_OK) {
-			rc = sqlOsInit();
-		}
-		if (rc == SQL_OK) {
+		rc = sqlOsInit();
+		if (rc == 0)
 			sqlGlobalConfig.isInit = 1;
-		}
 		sqlGlobalConfig.inProgress = 0;
 	}
 
@@ -160,7 +150,7 @@ sql_initialize(void)
 	 */
 #ifndef NDEBUG
 	/* This section of code's only "output" is via assert() statements. */
-	if (rc == SQL_OK) {
+	if (rc == 0) {
 		u64 x = (((u64) 1) << 63) - 1;
 		double y;
 		assert(sizeof(x) == 8);
@@ -212,11 +202,7 @@ functionDestroy(sql * db, FuncDef * p)
 }
 
 /*
- * Rollback all database files.  If tripCode is not SQL_OK, then
- * any write cursors are invalidated ("tripped" - as in "tripping a circuit
- * breaker") and made to return tripCode if there are any further
- * attempts to use that cursor.  Read cursors remain open and valid
- * but are "saved" in case the table pages are moved around.
+ * Rollback all database files.
  */
 void
 sqlRollbackAll(Vdbe * pVdbe)
@@ -258,7 +244,7 @@ sqlCreateFunc(sql * db,
 	    (255 < (sqlStrlen30(zFunctionName)))) {
 		diag_set(ClientError, ER_CREATE_FUNCTION, zFunctionName,
 			 "wrong function definition");
-		return SQL_TARANTOOL_ERROR;
+		return -1;
 	}
 
 	assert(SQL_FUNC_CONSTANT == SQL_DETERMINISTIC);
@@ -276,7 +262,7 @@ sqlCreateFunc(sql * db,
 			diag_set(ClientError, ER_CREATE_FUNCTION, zFunctionName,
 				 "unable to create function due to active "\
 				 "statements");
-			return SQL_TARANTOOL_ERROR;
+			return -1;
 		} else {
 			sqlExpirePreparedStatements(db);
 		}
@@ -285,7 +271,7 @@ sqlCreateFunc(sql * db,
 	p = sqlFindFunction(db, zFunctionName, nArg, 1);
 	assert(p || db->mallocFailed);
 	if (p == NULL)
-		return SQL_TARANTOOL_ERROR;
+		return -1;
 
 	/* If an older version of the function with a configured destructor is
 	 * being replaced invoke the destructor function here.
@@ -303,7 +289,7 @@ sqlCreateFunc(sql * db,
 	p->pUserData = pUserData;
 	p->nArg = (u16) nArg;
 	p->ret_type = type;
-	return SQL_OK;
+	return 0;
 }
 
 int
@@ -320,7 +306,6 @@ sql_create_function_v2(sql * db,
 			   void (*xFinal) (sql_context *),
 			   void (*xDestroy) (void *))
 {
-	int rc = SQL_ERROR;
 	FuncDestructor *pArg = 0;
 
 	if (xDestroy) {
@@ -330,44 +315,20 @@ sql_create_function_v2(sql * db,
 							   (FuncDestructor));
 		if (!pArg) {
 			xDestroy(p);
-			goto out;
+			return -1;
 		}
 		pArg->xDestroy = xDestroy;
 		pArg->pUserData = p;
 	}
-	rc = sqlCreateFunc(db, zFunc, type, nArg, flags, p, xSFunc, xStep,
+	int rc = sqlCreateFunc(db, zFunc, type, nArg, flags, p, xSFunc, xStep,
 			       xFinal, pArg);
 	if (pArg && pArg->nRef == 0) {
-		assert(rc != SQL_OK);
+		assert(rc != 0);
 		xDestroy(p);
 		sqlDbFree(db, pArg);
 	}
-
- out:
-	rc = sqlApiExit(db, rc);
 	return rc;
 }
-
-#ifndef SQL_OMIT_TRACE
-/* Register a trace callback using the version-2 interface.
- */
-int
-sql_trace_v2(sql * db,		/* Trace this connection */
-		 unsigned mTrace,	/* Mask of events to be traced */
-		 int (*xTrace) (unsigned, void *, void *, void *),	/* Callback to invoke */
-		 void *pArg)		/* Context */
-{
-	if (mTrace == 0)
-		xTrace = 0;
-	if (xTrace == 0)
-		mTrace = 0;
-	db->mTrace = mTrace;
-	db->xTrace = xTrace;
-	db->pTraceArg = pArg;
-	return SQL_OK;
-}
-
-#endif				/* SQL_OMIT_TRACE */
 
 /*
  * This function returns true if main-memory should be used instead of
@@ -519,22 +480,20 @@ sql_limit(sql * db, int limitId, int newLimit)
  * SQL connection instance.
  *
  * @param[out] out_db returned database handle.
- * @return error status code.
+ * @return 0 on success, -1 on error.
  */
 int
 sql_init_db(sql **out_db)
 {
 	sql *db;
-	int rc;			/* Return code */
 
-	rc = sql_initialize();
-	if (rc)
-		return rc;
+	if (sql_initialize() != 0)
+		return -1;
 
 	/* Allocate the sql data structure */
 	db = sqlMallocZero(sizeof(sql));
-	if (db == 0)
-		goto opendb_out;
+	if (db == NULL)
+		return -1;
 	db->errMask = 0xff;
 	db->magic = SQL_MAGIC_BUSY;
 
@@ -548,26 +507,19 @@ sql_init_db(sql **out_db)
 	db->nMaxSorterMmap = 0x7FFFFFFF;
 
 	db->magic = SQL_MAGIC_OPEN;
-	if (db->mallocFailed) {
-		goto opendb_out;
-	}
+	if (db->mallocFailed)
+		return -1;
 
 	/* Register all built-in functions, but do not attempt to read the
 	 * database schema yet. This is delayed until the first time the database
 	 * is accessed.
 	 */
-	sqlRegisterPerConnectionBuiltinFunctions(db);
-
-opendb_out:
-	assert(db != 0 || rc == SQL_NOMEM);
-	if (rc == SQL_NOMEM)
-		db = NULL;
-	else if (rc != SQL_OK)
-		db->magic = SQL_MAGIC_SICK;
+	if (sqlRegisterPerConnectionBuiltinFunctions(db) != 0)
+		return -1;
 
 	*out_db = db;
 
-	return rc;
+	return 0;
 }
 
 /*

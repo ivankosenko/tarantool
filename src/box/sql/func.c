@@ -1799,14 +1799,12 @@ static inline int
 sql_overload_function(sql * db, const char *zName,
 			  enum field_type type, int nArg)
 {
-	int rc = SQL_OK;
-
-	if (sqlFindFunction(db, zName, nArg, 0) == 0) {
-		rc = sqlCreateFunc(db, zName, type, nArg, 0, 0,
-				       sqlInvalidFunction, 0, 0, 0);
-	}
-	rc = sqlApiExit(db, rc);
-	return rc;
+	if (sqlFindFunction(db, zName, nArg, 0) != NULL)
+		return 0;
+	if (sqlCreateFunc(db, zName, type, nArg, 0, 0, sqlInvalidFunction, 0,
+			  0, 0) != 0)
+		return -1;
+	return 0;
 }
 
 /*
@@ -1814,14 +1812,10 @@ sql_overload_function(sql * db, const char *zName,
  * of the built-in functions above are part of the global function set.
  * This routine only deals with those that are not global.
  */
-void
+int
 sqlRegisterPerConnectionBuiltinFunctions(sql * db)
 {
-	int rc = sql_overload_function(db, "MATCH", FIELD_TYPE_SCALAR, 2);
-	assert(rc == SQL_NOMEM || rc == SQL_OK);
-	if (rc == SQL_NOMEM) {
-		sqlOomFault(db);
-	}
+	return sql_overload_function(db, "MATCH", FIELD_TYPE_SCALAR, 2);
 }
 
 /*

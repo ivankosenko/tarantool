@@ -194,7 +194,7 @@ sqlOsInit(void)
 {
 	void *p = sql_malloc(10);
 	if (p == 0)
-		return SQL_NOMEM;
+		return -1;
 	sql_free(p);
 	return sql_os_init();
 }

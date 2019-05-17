@@ -3894,7 +3894,7 @@ void sqlInsertBuiltinFuncs(FuncDef *, int);
 FuncDef *sqlFindFunction(sql *, const char *, int, u8);
 void sqlRegisterBuiltinFunctions(void);
 void sqlRegisterDateTimeFunctions(void);
-void sqlRegisterPerConnectionBuiltinFunctions(sql *);
+int sqlRegisterPerConnectionBuiltinFunctions(sql *);
 
 /**
  * Evaluate a view and store its result in an ephemeral table.
