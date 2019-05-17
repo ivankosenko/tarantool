@@ -741,6 +741,13 @@ vy_scheduler_end_checkpoint(struct vy_scheduler *scheduler)
 		 */
 		vy_scheduler_trigger_dump(scheduler);
 	}
+
+	/*
+	 * Checkpointing temporarily blocks compaction.
+	 * Wake up the scheduler to check if there are
+	 * pending compaction tasks.
+	 */
+	fiber_cond_signal(&scheduler->scheduler_cond);
 }
 
 /**
@@ -1896,6 +1903,16 @@ vy_scheduler_peek_compaction(struct vy_scheduler *scheduler,
 	struct vy_worker *worker = NULL;
 retry:
 	*ptask = NULL;
+	/*
+	 * Upon completion a compaction task removes compacted run
+	 * files unless they are needed for recovery from the last
+	 * checkpoint. If we start compaction while checkpointing
+	 * is in progress we might compact a run that belongs to
+	 * the new, to be created, checkpoint. To avoid that we
+	 * lock out compaction while checkpointing is in progress.
+	 */
+	if (scheduler->checkpoint_in_progress)
+		goto no_task;
 	struct vy_lsm *lsm = vy_compaction_heap_top(&scheduler->compaction_heap);
 	if (lsm == NULL)
 		goto no_task; /* nothing to do */

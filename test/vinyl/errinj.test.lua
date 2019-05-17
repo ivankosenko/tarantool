@@ -346,15 +346,18 @@ _ = s:create_index('pk', {run_count_per_level = 1})
 _ = s:replace{1}
 box.snapshot()
 -- Create another run file. This will trigger compaction
--- as run_count_per_level is set to 1. Due to the error
--- injection compaction will finish before snapshot.
+-- as run_count_per_level is set to 1. Delay checkpointing
+-- completion and check that compaction doesn't remove
+-- files that are still needed for backup.
 _ = s:replace{2}
 errinj.set('ERRINJ_SNAP_COMMIT_DELAY', true)
 c = fiber.channel(1)
 _ = fiber.create(function() box.snapshot() c:put(true) end)
-while s.index.pk:stat().disk.compaction.count == 0 do fiber.sleep(0.001) end
+test_run:wait_cond(function() return s.index.pk:stat().disk.compaction.queue.bytes > 0 end)
+test_run:wait_cond(function() return box.stat.vinyl().scheduler.tasks_inprogress == 0 end)
 errinj.set('ERRINJ_SNAP_COMMIT_DELAY', false)
 c:get()
+test_run:wait_cond(function() return s.index.pk:stat().disk.compaction.count > 0 end)
 -- Check that all files corresponding to the last checkpoint
 -- are present.
 files = box.backup.start()
