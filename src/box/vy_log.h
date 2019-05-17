@@ -273,7 +273,7 @@ struct vy_log_record {
 	int64_t gc_lsn;
 	/** For runs: number of dumps it took to create the run. */
 	uint32_t dump_count;
-	/** Link in vy_log::tx. */
+	/** Link in vy_log_tx::records. */
 	struct stailq_entry in_tx;
 };
 
@@ -482,7 +482,8 @@ vy_log_tx_begin(void);
  * Commit a transaction started with vy_log_tx_begin().
  *
  * This function flushes all buffered records to disk. If it fails,
- * all records of the current transaction are discarded.
+ * all records of the current transaction are discarded. Note, it
+ * waits for the transaction to be written, i.e. yields.
  *
  * See also vy_log_tx_try_commit().
  *
@@ -497,7 +498,8 @@ vy_log_tx_commit(void);
  * Similarly to vy_log_tx_commit(), this function tries to write all
  * buffered records to disk, but in case of failure pending records
  * are not expunged from the buffer, so that the next transaction
- * will retry to flush them.
+ * will retry to flush them. In contrast to vy_log_tx_commit(),
+ * this function doesn't yield.
  */
 void
 vy_log_tx_try_commit(void);
