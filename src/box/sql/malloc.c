@@ -476,18 +476,7 @@ sqlScratchFree(void *p)
 	}
 }
 
-/*
- * TRUE if p is a lookaside memory allocation from db
- */
-#ifndef SQL_OMIT_LOOKASIDE
-static int
-isLookaside(sql * db, void *p)
-{
-	return SQL_WITHIN(p, db->lookaside.pStart, db->lookaside.pEnd);
-}
-#else
 #define isLookaside(A,B) 0
-#endif
 
 /*
  * Return the size of a memory allocation previously obtained from
@@ -740,35 +729,11 @@ sqlDbMallocRaw(sql * db, u64 n)
 void *
 sqlDbMallocRawNN(sql * db, u64 n)
 {
-#ifndef SQL_OMIT_LOOKASIDE
-	LookasideSlot *pBuf;
-	assert(db != 0);
-	assert(db->pnBytesFreed == 0);
-	if (db->lookaside.bDisable == 0) {
-		assert(db->mallocFailed == 0);
-		if (n > db->lookaside.sz) {
-			db->lookaside.anStat[1]++;
-		} else if ((pBuf = db->lookaside.pFree) == 0) {
-			db->lookaside.anStat[2]++;
-		} else {
-			db->lookaside.pFree = pBuf->pNext;
-			db->lookaside.nOut++;
-			db->lookaside.anStat[0]++;
-			if (db->lookaside.nOut > db->lookaside.mxOut) {
-				db->lookaside.mxOut = db->lookaside.nOut;
-			}
-			return (void *)pBuf;
-		}
-	} else if (db->mallocFailed) {
-		return 0;
-	}
-#else
 	assert(db != 0);
 	assert(db->pnBytesFreed == 0);
 	if (db->mallocFailed) {
 		return 0;
 	}
-#endif
 	return dbMallocRawFinish(db, n);
 }
 
