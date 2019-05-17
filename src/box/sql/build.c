@@ -2762,14 +2762,14 @@ sqlSrcListDelete(sql * db, SrcList * pList)
 		if (pItem->fg.isTabFunc)
 			sql_expr_list_delete(db, pItem->u1.pFuncArg);
 		/*
-		* Space is either not temporary which means that
-		* it came from space cache; or space is temporary
+		* Space is either not ephemeral which means that
+		* it came from space cache; or space is ephemeral
 		* but has no indexes and check constraints.
 		* The latter proves that it is not the space
 		* which might come from CREATE TABLE routines.
 		*/
 		assert(pItem->space == NULL ||
-			!pItem->space->def->opts.is_temporary ||
+			!pItem->space->def->opts.is_ephemeral ||
 			 (pItem->space->index == NULL &&
 			  pItem->space->def->opts.checks == NULL));
 		sql_select_delete(db, pItem->pSelect);
