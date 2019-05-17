@@ -1825,8 +1825,8 @@ generateColumnNames(Parse * pParse,	/* Parser context */
  * Only the column names are computed.  Column.zType, Column.zColl,
  * and other fields of Column are zeroed.
  *
- * Return SQL_OK on success.  If a memory allocation error occurs,
- * store NULL in *paCol and 0 in *pnCol and return SQL_NOMEM.
+ * Return 0 on success.  If a memory allocation error occurs,
+ * store NULL in *paCol and 0 in *pnCol and return -1.
  */
 int
 sqlColumnsFromExprList(Parse * parse, ExprList * expr_list,
@@ -1929,17 +1929,16 @@ sqlColumnsFromExprList(Parse * parse, ExprList * expr_list,
 	}
 cleanup:
 	sqlHashClear(&ht);
-	int rc = db->mallocFailed ? SQL_NOMEM : SQL_OK;
-	if (rc != SQL_OK) {
+	if (db->mallocFailed) {
 		/*
 		 * pTable->def could be not temporal in
 		 * sqlViewGetColumnNames so we need clean-up.
 		 */
 		space_def->fields = NULL;
 		space_def->field_count = 0;
-		rc = SQL_NOMEM;
+		return -1;
 	}
-	return rc;
+	return 0;
 
 }
 
@@ -2579,7 +2578,7 @@ multiSelect(Parse * pParse,	/* Parsing context */
 	    Select * p,		/* The right-most of SELECTs to be coded */
 	    SelectDest * pDest)	/* What to do with query results */
 {
-	int rc = SQL_OK;	/* Success code from a subroutine */
+	int rc = 0;		/* Success code from a subroutine */
 	Select *pPrior;		/* Another SELECT immediately to our left */
 	Vdbe *v;		/* Generate code to this VDBE */
 	SelectDest dest;	/* Alternative data destination */
@@ -2694,7 +2693,6 @@ multiSelect(Parse * pParse,	/* Parsing context */
 				}
 				iSub2 = pParse->iNextSelectId;
 				rc = sqlSelect(pParse, p, &dest);
-				testcase(rc != SQL_OK);
 				pDelete = p->pPrior;
 				p->pPrior = pPrior;
 				p->nSelectRow =
@@ -2781,7 +2779,6 @@ multiSelect(Parse * pParse,	/* Parsing context */
 				uniondest.eDest = op;
 				iSub2 = pParse->iNextSelectId;
 				rc = sqlSelect(pParse, p, &uniondest);
-				testcase(rc != SQL_OK);
 				/* Query flattening in sqlSelect() might refill p->pOrderBy.
 				 * Be sure to delete p->pOrderBy, therefore, to avoid a memory leak.
 				 */
@@ -2895,7 +2892,6 @@ multiSelect(Parse * pParse,	/* Parsing context */
 				intersectdest.reg_eph = reg_eph2;
 				iSub2 = pParse->iNextSelectId;
 				rc = sqlSelect(pParse, p, &intersectdest);
-				testcase(rc != SQL_OK);
 				pDelete = p->pPrior;
 				p->pPrior = pPrior;
 				if (p->nSelectRow > pPrior->nSelectRow)
@@ -4422,8 +4418,8 @@ is_simple_count(struct Select *select, struct AggInfo *agg_info)
  * If the source-list item passed as an argument was augmented with an
  * INDEXED BY clause, then try to locate the specified index. If there
  * was such a clause and the named index cannot be found, return
- * SQL_ERROR and leave an error in pParse. Otherwise, populate
- * pFrom->pIndex and return SQL_OK.
+ * -1 and set an error. Otherwise, populate pFrom->pIndex and
+ * return 0.
  */
 int
 sqlIndexedByLookup(Parse * pParse, struct SrcList_item *pFrom)
@@ -4443,11 +4439,11 @@ sqlIndexedByLookup(Parse * pParse, struct SrcList_item *pFrom)
 			diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
 				 zIndexedBy, space->def->name);
 			pParse->is_aborted = true;
-			return SQL_ERROR;
+			return -1;
 		}
 		pFrom->pIBIndex = idx->def;
 	}
-	return SQL_OK;
+	return 0;
 }
 
 /*
@@ -4601,9 +4597,9 @@ sqlWithPush(Parse * pParse, With * pWith, u8 bFree)
  * (pFrom->space!=0) to determine whether or not a successful match
  * was found.
  *
- * Whether or not a match is found, SQL_OK is returned if no error
- * occurs. If an error does occur, an error message is stored in the
- * parser and some error code other than SQL_OK returned.
+ * Whether or not a match is found, 0 is returned if no error
+ * occurs. If an error does occur, an error is set and -1
+ * returned.
  */
 static int
 withExpand(Walker * pWalker, struct SrcList_item *pFrom)
@@ -4632,23 +4628,23 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 				 tt_sprintf(pCte->zCteErr, pCte->zName));
 			pParse->is_aborted = true;
-			return SQL_ERROR;
+			return -1;
 		}
 		if (pFrom->fg.isTabFunc) {
 			const char *err = "'%s' is not a function";
 			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 				 tt_sprintf(err, pFrom->zName));
 			pParse->is_aborted = true;
-			return SQL_ERROR;
+			return -1;
 		}
 
 		assert(pFrom->space == NULL);
 		pFrom->space = sql_ephemeral_space_new(pParse, pCte->zName);
 		if (pFrom->space == NULL)
-			return WRC_Abort;
+			return -1;
 		pFrom->pSelect = sqlSelectDup(db, pCte->pSelect, 0);
 		if (db->mallocFailed)
-			return SQL_NOMEM;
+			return -1;
 		assert(pFrom->pSelect);
 
 		/* Check if this is a recursive CTE. */
@@ -4677,7 +4673,7 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 					   "table: %s", pCte->zName);
 			diag_set(ClientError, ER_SQL_PARSER_GENERIC, err_msg);
 			pParse->is_aborted = true;
-			return SQL_ERROR;
+			return -1;
 		}
 		assert(ref_counter == 0 ||
 			((pSel->selFlags & SF_Recursive) && ref_counter == 1));
@@ -4700,7 +4696,7 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 				diag_set(ClientError, ER_SQL_PARSER_GENERIC, err_msg);
 				pParse->is_aborted = true;
 				pParse->pWith = pSavedWith;
-				return SQL_ERROR;
+				return -1;
 			}
 			pEList = pCte->pCols;
 		}
@@ -4721,7 +4717,7 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 		pParse->pWith = pSavedWith;
 	}
 
-	return SQL_OK;
+	return 0;
 }
 #endif
 
@@ -4813,7 +4809,7 @@ selectExpander(Walker * pWalker, Select * p)
 			continue;
 		assert(pFrom->space == NULL);
 #ifndef SQL_OMIT_CTE
-		if (withExpand(pWalker, pFrom))
+		if (withExpand(pWalker, pFrom) != 0)
 			return WRC_Abort;
 		if (pFrom->space != NULL) {
 		} else
@@ -4878,7 +4874,7 @@ selectExpander(Walker * pWalker, Select * p)
 			}
 		}
 		/* Locate the index named by the INDEXED BY clause, if any. */
-		if (sqlIndexedByLookup(pParse, pFrom)) {
+		if (sqlIndexedByLookup(pParse, pFrom) != 0) {
 			return WRC_Abort;
 		}
 	}
@@ -6426,7 +6422,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 
 	/* Identify column names if results of the SELECT are to be output.
 	 */
-	if (rc == SQL_OK && pDest->eDest == SRT_Output) {
+	if (rc == 0 && pDest->eDest == SRT_Output) {
 		generateColumnNames(pParse, pTabList, pEList);
 	}
 
