@@ -1811,7 +1811,7 @@ sql_overload_function(sql * db, const char *zName,
 {
 	int rc = SQL_OK;
 
-	if (sqlFindFunction(db, zName, nArg, 0) == 0) {
+	if (sql_find_function(db, zName, nArg, false) == 0) {
 		rc = sqlCreateFunc(db, zName, type, nArg, 0, 0,
 				       sqlInvalidFunction, 0, 0, 0);
 	}
@@ -1841,7 +1841,7 @@ static void
 setLikeOptFlag(sql * db, const char *zName, u8 flagVal)
 {
 	FuncDef *pDef;
-	pDef = sqlFindFunction(db, zName, 2, 0);
+	pDef = sql_find_function(db, zName, 2, false);
 	if (ALWAYS(pDef)) {
 		pDef->funcFlags |= flagVal;
 	}
@@ -1875,7 +1875,7 @@ sql_is_like_func(struct sql *db, struct Expr *expr, int *is_like_ci)
 	    expr->x.pList->nExpr != 2)
 		return 0;
 	assert(!ExprHasProperty(expr, EP_xIsSelect));
-	struct FuncDef *func = sqlFindFunction(db, expr->u.zToken, 2, 0);
+	struct FuncDef *func = sql_find_function(db, expr->u.zToken, 2, false);
 	assert(func != NULL);
 	if ((func->funcFlags & SQL_FUNC_LIKE) == 0)
 		return 0;

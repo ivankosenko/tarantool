@@ -434,7 +434,7 @@ sqlCreateFunc(sql * db,
 	 * is being overridden/deleted but there are no active VMs, allow the
 	 * operation to continue but invalidate all precompiled statements.
 	 */
-	p = sqlFindFunction(db, zFunctionName, nArg, 0);
+	p = sql_find_function(db, zFunctionName, nArg, false);
 	if (p && p->nArg == nArg) {
 		if (db->nVdbeActive) {
 			sqlErrorWithMsg(db, SQL_BUSY,
@@ -446,11 +446,9 @@ sqlCreateFunc(sql * db,
 		}
 	}
 
-	p = sqlFindFunction(db, zFunctionName, nArg, 1);
-	assert(p || db->mallocFailed);
-	if (!p) {
-		return SQL_NOMEM;
-	}
+	p = sql_find_function(db, zFunctionName, nArg, true);
+	if (p == NULL)
+		return SQL_TARANTOOL_ERROR;
 
 	/* If an older version of the function with a configured destructor is
 	 * being replaced invoke the destructor function here.
