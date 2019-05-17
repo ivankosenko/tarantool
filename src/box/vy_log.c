@@ -862,12 +862,6 @@ vy_log_flush(bool no_discard)
 	if (stailq_empty(&vy_log.tx))
 		return 0; /* nothing to do */
 
-	struct errinj *delay = errinj(ERRINJ_VY_LOG_FLUSH_DELAY, ERRINJ_BOOL);
-	if (delay != NULL && delay->bparam) {
-		while (delay->bparam)
-			fiber_sleep(0.001);
-	}
-
 	/*
 	 * Do actual disk writes on behalf of the vylog thread
 	 * so as not to block the tx thread.
